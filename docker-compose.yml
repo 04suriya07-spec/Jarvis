@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  javris:
+    build: .
+    container_name: javris-os
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount the current directory for live code reloading
+      - .:/app
+      # Persistent named volumes for databases and memory stores
+      - javris_data:/app/jarvis_data
+      - javris_db:/app/data
+    env_file:
+      - .env
+    devices:
+      # Mount sound devices for Voice mode / Gemini Live
+      - "/dev/snd:/dev/snd"
+      # Mount webcam for Gesture control / Gemini Live Video
+      - "/dev/video0:/dev/video0"
+    # To run GUI windows (like cv2.imshow) on Linux host, you may need to forward X11
+    # environment:
+    #   - DISPLAY=$DISPLAY
+    # volumes:
+    #   - /tmp/.X11-unix:/tmp/.X11-unix
+    restart: unless-stopped
+
+volumes:
+  javris_data:
+  javris_db:

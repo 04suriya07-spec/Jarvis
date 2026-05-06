@@ -1,0 +1,103 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "javris"
+version = "1.0.0"
+description = "Advanced AI Personal Assistant with Voice, Cloud, and Multi-Agent capabilities"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [{name = "Javris Project"}]
+
+dependencies = [
+    # Core AI
+    "anthropic>=0.40.0",
+    "openai>=1.50.0",
+    "ollama>=0.3.0",
+    "google-genai>=1.0.0",           # Gemini Live API (real-time audio/video)
+
+    # Voice - STT
+    "openai-whisper>=20240930",
+    "SpeechRecognition>=3.10.0",
+    "pyaudio>=0.2.14",
+    "sounddevice>=0.4.6",
+    "soundfile>=0.12.1",
+
+    # Voice - TTS
+    "pyttsx3>=2.90",
+    "elevenlabs>=1.9.0",
+    "edge-tts>=6.1.12",
+
+    # Web server
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "websockets>=13.0",
+    "python-multipart>=0.0.9",
+
+    # Cloud / Firebase
+    "firebase-admin>=6.5.0",
+    "google-cloud-firestore>=2.19.0",
+
+    # Skills & Tools
+    "duckduckgo-search>=6.3.0",
+    "requests>=2.32.0",
+    "httpx>=0.27.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.2.0",
+    "python-dotenv>=1.0.0",
+
+    # Scheduling
+    "apscheduler>=3.10.0",
+
+    # System control
+    "psutil>=6.0.0",
+    "pyautogui>=0.9.54",
+
+    # Data / Storage
+    "sqlalchemy>=2.0.0",
+    "aiosqlite>=0.20.0",
+
+    # Email
+    "google-auth-oauthlib>=1.2.0",
+    "google-api-python-client>=2.140.0",
+
+    # Computer-Use / Browser Automation
+    "playwright>=1.48.0",
+    "pygetwindow>=0.0.9",
+
+    # Gesture Control (vision pipeline)
+    "opencv-python>=4.9.0",
+    "mediapipe>=0.10.0",
+    "playsound>=1.3.0",
+
+    # Utilities
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.4.0",
+    "rich>=13.7.0",
+    "click>=8.1.0",
+    "arrow>=1.3.0",
+    "Pillow>=10.4.0",
+    "numpy>=1.26.0",
+
+    # Vector memory — ChromaDB (openclaw-inspired semantic search)
+    # Install: pip install chromadb
+    # Falls back to keyword search when not installed
+    "chromadb>=0.5.0",
+
+    # Testing
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+
+    # Wake word (optional — set PORCUPINE_API_KEY in .env)
+    # "pvporcupine>=3.0.0",
+]
+
+[project.scripts]
+javris = "main:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools.package-data]
+"*" = ["*.html", "*.css", "*.js", "*.json"]

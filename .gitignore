@@ -1,0 +1,24 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+data/
+logs/
+firebase-credentials.json
+*.db
+*.db-shm
+*.db-wal
+data/screenshots/
+.uid
+dist/
+build/
+*.egg-info/
+.DS_Store
+Thumbs.db
+node_modules/
+
+# Added by Antigravity
+API-Keys.txt
+live_out.txt
+crash.log

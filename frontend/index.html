@@ -1,0 +1,1655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Javris OS</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   JAVRIS OS — WORKSPACE STYLESHEET
+   ═══════════════════════════════════════════════════════════ */
+:root{
+  --bg:#050810;--surface:#0b1120;--surface2:#101828;--surface3:#18243a;
+  --accent:#00d4ff;--accent2:#7c3aed;--accent3:#10b981;--accent4:#f59e0b;
+  --red:#ef4444;--muted:#3d5878;--text:#e2e8f0;--border:#162035;
+  --font:'Segoe UI',system-ui,sans-serif;--mono:'Cascadia Code','Fira Code',monospace;
+  --r:10px;--panel-head:38px;
+}
+*{box-sizing:border-box;margin:0;padding:0;user-select:none}
+input,textarea,select{user-select:text}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px}
+
+/* ── GRID BACKGROUND ── */
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:
+    linear-gradient(rgba(0,212,255,.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,212,255,.03) 1px,transparent 1px);
+  background-size:40px 40px;pointer-events:none;z-index:0;
+}
+
+/* ── TOPBAR ── */
+#topbar{
+  position:fixed;top:0;left:0;right:0;height:44px;z-index:9000;
+  background:rgba(5,8,16,.92);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;padding:0 14px;
+}
+.tb-logo{width:30px;height:30px;border-radius:50%;background:conic-gradient(var(--accent),var(--accent2),var(--accent));display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;color:#fff;animation:hue 8s linear infinite;flex-shrink:0;cursor:pointer}
+@keyframes hue{to{filter:hue-rotate(360deg)}}
+.tb-brand{font-size:15px;font-weight:800;letter-spacing:3px;color:var(--accent);flex-shrink:0}
+.tb-sep{width:1px;height:20px;background:var(--border);flex-shrink:0}
+
+/* Panel launcher buttons */
+.panel-launcher{
+  display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;
+  border:1px solid transparent;background:none;color:var(--muted);
+  cursor:pointer;font-size:11px;font-family:var(--font);transition:all .15s;flex-shrink:0;
+}
+.panel-launcher:hover{background:rgba(0,212,255,.08);border-color:var(--accent);color:var(--accent)}
+.panel-launcher.open{background:rgba(0,212,255,.12);border-color:var(--accent);color:var(--accent)}
+
+/* Voice area */
+#voice-area{
+  margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;
+}
+#voice-ring{
+  width:34px;height:34px;border-radius:50%;border:2px solid var(--muted);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  transition:all .2s;position:relative;
+}
+#voice-ring.listening{border-color:var(--red);animation:vring 1s infinite}
+#voice-ring.speaking{border-color:var(--accent3);animation:vring 1s infinite}
+@keyframes vring{0%,100%{box-shadow:0 0 0 0 rgba(0,212,255,.4)}50%{box-shadow:0 0 0 8px rgba(0,212,255,0)}}
+#voice-ring.listening{animation:vring-red 1s infinite}
+@keyframes vring-red{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}50%{box-shadow:0 0 0 10px rgba(239,68,68,0)}}
+#voice-label{font-size:10px;color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#notif-btn{
+  width:32px;height:32px;border-radius:8px;border:1px solid var(--border);
+  background:var(--surface2);display:flex;align-items:center;justify-content:center;
+  cursor:pointer;position:relative;font-size:14px;
+}
+#notif-count{
+  position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;
+  font-size:9px;width:16px;height:16px;border-radius:50%;display:flex;
+  align-items:center;justify-content:center;font-weight:700;display:none;
+}
+.tb-badge{display:flex;align-items:center;gap:4px;padding:3px 8px;border-radius:12px;background:var(--surface2);border:1px solid var(--border);font-size:10px;flex-shrink:0}
+.dot{width:6px;height:6px;border-radius:50%}
+.dot.on{background:var(--accent3);box-shadow:0 0 5px var(--accent3)}
+.dot.off{background:var(--red)}.dot.idle{background:var(--accent4)}
+
+/* ── WORKSPACE ── */
+#workspace{position:fixed;top:44px;left:0;right:0;bottom:40px;z-index:1}
+
+/* ── FLOATING PANEL ── */
+.panel{
+  position:absolute;background:rgba(11,17,32,.95);
+  backdrop-filter:blur(16px);border:1px solid var(--border);
+  border-radius:12px;display:flex;flex-direction:column;
+  box-shadow:0 8px 40px rgba(0,0,0,.6),0 0 0 1px rgba(0,212,255,.05);
+  min-width:280px;min-height:180px;
+  transition:box-shadow .15s;
+  overflow:hidden;
+}
+.panel.focused{
+  border-color:rgba(0,212,255,.3);
+  box-shadow:0 12px 50px rgba(0,0,0,.7),0 0 0 1px rgba(0,212,255,.15);
+}
+.panel.minimized{display:none}
+
+/* Panel header */
+.panel-head{
+  height:var(--panel-head);display:flex;align-items:center;gap:8px;
+  padding:0 12px;cursor:move;flex-shrink:0;
+  background:rgba(255,255,255,.02);
+  border-bottom:1px solid var(--border);
+}
+.panel-head .ph-icon{font-size:14px;flex-shrink:0}
+.panel-head .ph-title{font-size:12px;font-weight:600;flex:1;letter-spacing:.5px}
+.panel-head .ph-controls{display:flex;gap:4px;margin-left:auto}
+.phc-btn{
+  width:18px;height:18px;border-radius:50%;border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;font-size:9px;
+  transition:opacity .15s;
+}
+.phc-btn:hover{opacity:.8}
+.phc-min{background:#f59e0b;color:#000}
+.phc-max{background:#10b981;color:#000}
+.phc-cls{background:#ef4444;color:#fff}
+
+/* Panel body */
+.panel-body{flex:1;overflow:hidden;display:flex;flex-direction:column;position:relative}
+
+/* Resize handle */
+.resize-handle{
+  position:absolute;bottom:0;right:0;width:14px;height:14px;
+  cursor:se-resize;z-index:10;
+  background:linear-gradient(135deg,transparent 50%,rgba(0,212,255,.3) 50%);
+  border-bottom-right-radius:10px;
+}
+
+/* ── TASKBAR ── */
+#taskbar{
+  position:fixed;bottom:0;left:0;right:0;height:40px;z-index:9000;
+  background:rgba(5,8,16,.92);backdrop-filter:blur(12px);
+  border-top:1px solid var(--border);
+  display:flex;align-items:center;gap:4px;padding:0 8px;overflow-x:auto;
+}
+.taskbar-item{
+  display:flex;align-items:center;gap:5px;padding:4px 10px;
+  border-radius:6px;border:1px solid var(--border);background:var(--surface2);
+  color:var(--muted);cursor:pointer;font-size:11px;font-family:var(--font);
+  transition:all .15s;flex-shrink:0;min-width:80px;
+}
+.taskbar-item:hover{border-color:var(--accent);color:var(--accent)}
+.taskbar-item.active{background:rgba(0,212,255,.1);border-color:var(--accent);color:var(--accent)}
+.taskbar-item .ti-dot{width:5px;height:5px;border-radius:50%;background:var(--accent3);flex-shrink:0}
+
+/* ── NOTIFICATIONS PANEL ── */
+.notif-item{
+  padding:10px 12px;border-radius:8px;background:var(--surface2);
+  border-left:3px solid var(--muted);margin-bottom:7px;font-size:12px;
+  cursor:pointer;transition:background .15s;
+}
+.notif-item:hover{background:var(--surface3)}
+.notif-item.high,.notif-item.critical{border-left-color:var(--red)}
+.notif-item.medium{border-left-color:var(--accent4)}
+.notif-item.low,.notif-item.info{border-left-color:var(--accent3)}
+.notif-item .ni-title{font-weight:600;margin-bottom:3px;display:flex;align-items:center;gap:6px}
+.notif-item .ni-msg{color:var(--muted);line-height:1.4}
+.notif-item .ni-time{font-size:10px;color:var(--muted);margin-top:4px}
+
+/* ── CHAT inside panel ── */
+.chat-scroll{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.msg{display:flex;gap:8px;max-width:100%}
+.msg.user{flex-direction:row-reverse;align-self:flex-end}
+.msg.assistant{align-self:flex-start}
+.msg .avatar{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px}
+.msg.user .avatar{background:var(--accent2)}
+.msg.assistant .avatar{background:linear-gradient(135deg,var(--accent),var(--accent2))}
+.msg .bubble{padding:8px 12px;border-radius:12px;font-size:12px;line-height:1.6;max-width:85%}
+.msg.user .bubble{background:#0f2744;border:1px solid rgba(0,212,255,.15);border-bottom-right-radius:3px}
+.msg.assistant .bubble{background:#0b1628;border:1px solid var(--border);border-bottom-left-radius:3px}
+.msg .bubble pre{background:#060d1a;padding:8px;border-radius:6px;overflow-x:auto;font-family:var(--mono);font-size:11px;margin:5px 0;border:1px solid var(--border)}
+.msg .bubble code{font-family:var(--mono);background:rgba(0,212,255,.1);padding:1px 4px;border-radius:3px;font-size:11px}
+.msg .bubble pre code{background:none;padding:0}
+.msg .bubble strong{color:var(--accent)}
+.msg .bubble a{color:var(--accent);text-decoration:none}
+.msg .bubble ul,.msg .bubble ol{padding-left:14px;margin:4px 0}
+.typing-dots{display:flex;gap:3px;padding:8px 12px;background:#0b1628;border-radius:12px;border-bottom-left-radius:3px;border:1px solid var(--border)}
+.td{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:tdb 1.4s infinite}
+.td:nth-child(2){animation-delay:.2s}.td:nth-child(3){animation-delay:.4s}
+@keyframes tdb{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-5px);opacity:1}}
+
+/* Chat input strip */
+.chat-input-strip{padding:8px 10px;border-top:1px solid var(--border);display:flex;gap:6px;align-items:flex-end;flex-shrink:0}
+.chat-ta{
+  flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;
+  color:var(--text);font-family:var(--font);font-size:12px;padding:7px 10px;
+  resize:none;min-height:34px;max-height:120px;outline:none;transition:border-color .2s;line-height:1.4;
+}
+.chat-ta:focus{border-color:var(--accent)}
+.chat-ta::placeholder{color:var(--muted)}
+.ibtn{width:34px;height:34px;border-radius:8px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .15s;flex-shrink:0}
+.ibtn.send{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+.ibtn.send:hover{opacity:.85;transform:scale(1.05)}
+.ibtn.send:disabled{opacity:.3;cursor:not-allowed;transform:none}
+.ibtn.ghost{background:var(--surface2);border:1px solid var(--border);color:var(--muted)}
+.ibtn.ghost:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ── COMPUTER PANEL ── */
+.comp-screenshot{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:8px;background:var(--bg)}
+.comp-screenshot img{max-width:100%;border-radius:6px;border:1px solid var(--border)}
+.step-log{height:160px;overflow-y:auto;padding:8px;border-top:1px solid var(--border);background:var(--surface)}
+.step-entry{display:flex;gap:6px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.03);font-size:11px;line-height:1.4}
+.step-num{color:var(--muted);flex-shrink:0;width:20px}
+.step-desc{flex:1;color:var(--text)}
+.step-desc.fail{color:var(--red)}
+.comp-controls{display:flex;gap:5px;padding:7px 10px;border-bottom:1px solid var(--border);flex-wrap:wrap;flex-shrink:0}
+.cbtn{padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:11px;cursor:pointer;font-family:var(--font);transition:all .15s;flex-shrink:0}
+.cbtn:hover{border-color:var(--accent);color:var(--accent)}
+.cbtn.danger{border-color:rgba(239,68,68,.3);color:var(--red)}
+.cbtn.danger:hover{background:rgba(239,68,68,.1)}
+.cbtn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;color:#fff}
+
+/* ── TASKS PANEL ── */
+.task-row{display:flex;align-items:center;gap:7px;padding:7px 10px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);margin-bottom:5px}
+.task-cb{width:15px;height:15px;border-radius:4px;border:1px solid var(--muted);flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:9px;transition:all .15s}
+.task-cb.done{background:var(--accent3);border-color:var(--accent3);color:#fff}
+.task-info{flex:1;min-width:0}
+.task-title-t{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task-meta{font-size:10px;color:var(--muted)}
+.prio{font-size:9px;padding:1px 6px;border-radius:8px;flex-shrink:0}
+.prio.critical{background:rgba(239,68,68,.2);color:var(--red)}
+.prio.high{background:rgba(249,115,22,.2);color:#f97316}
+.prio.medium{background:rgba(245,158,11,.2);color:var(--accent4)}
+.prio.low{background:rgba(16,185,129,.2);color:var(--accent3)}
+
+/* ── FORMS ── */
+.fi{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:var(--font);font-size:12px;padding:7px 9px;outline:none;margin-bottom:7px;transition:border-color .2s}
+.fi:focus{border-color:var(--accent)}
+.fl{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:4px;display:block}
+.fs{appearance:none}
+.ab{width:100%;padding:8px;border-radius:8px;border:none;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);margin-bottom:6px;transition:opacity .2s}
+.ab.pri{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+.ab.sec{background:var(--surface2);border:1px solid var(--border);color:var(--text)}
+.ab.sec:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ── INTELLIGENCE PANEL ── */
+.stat-mini{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center}
+.stat-mini .sm-val{font-size:20px;font-weight:700;color:var(--accent)}
+.stat-mini .sm-lbl{font-size:10px;color:var(--muted)}
+.fact-card{padding:8px;border-radius:7px;background:var(--surface2);border:1px solid var(--border);margin-bottom:5px;font-size:11px}
+.fact-cat{font-size:9px;color:var(--accent);text-transform:uppercase;margin-bottom:2px}
+.pat-bar-wrap{height:3px;background:var(--surface3);border-radius:2px;margin-top:4px}
+.pat-bar-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+
+/* ── WEATHER PANEL ── */
+.weather-big{text-align:center;padding:16px}
+.weather-temp{font-size:48px;font-weight:100;color:var(--accent);line-height:1}
+.weather-desc{font-size:14px;color:var(--muted);margin-top:4px}
+.weather-stats{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:0 10px 10px}
+.weather-stat{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px;font-size:11px;text-align:center}
+.weather-stat .ws-val{font-size:14px;font-weight:600;color:var(--text)}
+.weather-stat .ws-lbl{color:var(--muted);font-size:10px}
+
+/* ── NEWS PANEL ── */
+.news-item-p{padding:9px 10px;border-bottom:1px solid var(--border);font-size:11px;cursor:pointer}
+.news-item-p:hover{background:var(--surface2)}
+.news-item-p .nt{font-weight:600;line-height:1.4;margin-bottom:3px}
+.news-item-p .ns{color:var(--muted);font-size:10px}
+.news-item-p .nb{color:var(--muted);line-height:1.4;margin-top:3px}
+
+/* ── VOICE TRANSCRIPT BAR ── */
+#voice-bar{
+  position:fixed;bottom:40px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:rgba(0,0,0,.85);backdrop-filter:blur(16px);
+  border:1px solid var(--accent);border-radius:30px;
+  padding:8px 20px;font-size:13px;color:var(--accent);
+  transition:all .3s;opacity:0;pointer-events:none;z-index:9999;
+  max-width:500px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+#voice-bar.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── TOAST ── */
+.toast-container{position:fixed;top:52px;right:12px;z-index:9998;display:flex;flex-direction:column;gap:6px}
+.toast{
+  padding:10px 14px;border-radius:10px;background:rgba(11,17,32,.95);
+  backdrop-filter:blur(12px);border:1px solid var(--border);
+  color:var(--text);font-size:12px;max-width:280px;line-height:1.4;
+  animation:toast-in .3s ease;box-shadow:0 4px 20px rgba(0,0,0,.5);
+}
+@keyframes toast-in{from{transform:translateX(20px);opacity:0}to{transform:none;opacity:1}}
+.toast.success{border-color:var(--accent3)}.toast.error{border-color:var(--red)}.toast.info{border-color:var(--accent)}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+/* ── MODE MENU ── */
+.mode-opt{
+  padding:6px 10px;border-radius:5px;cursor:pointer;font-size:11px;color:var(--text);
+  transition:background .1s;white-space:nowrap;
+}
+.mode-opt:hover{background:rgba(0,212,255,.12);color:var(--accent)}
+
+/* ── WELCOME ── */
+#workspace-welcome{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  pointer-events:none;z-index:0;
+}
+#workspace-welcome.hidden{display:none}
+.ww-inner{text-align:center;opacity:.25}
+.ww-ring{width:100px;height:100px;border-radius:50%;border:2px solid var(--accent);margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:50px;animation:pulse 4s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(0,212,255,.3)}50%{box-shadow:0 0 0 20px rgba(0,212,255,0)}}
+</style>
+</head>
+<body>
+
+<!-- ══ TOPBAR ══════════════════════════════════════════════════ -->
+<div id="topbar">
+  <div class="tb-logo" onclick="openPanel('chat')" title="Chat">J</div>
+  <div class="tb-brand">JAVRIS</div>
+  <div class="tb-sep"></div>
+
+  <!-- Mode switcher -->
+  <div style="position:relative;flex-shrink:0">
+    <button class="panel-launcher" id="mode-btn" onclick="toggleModeMenu()" title="Switch workspace mode">
+      <span id="mode-icon">💼</span> <span id="mode-name">Work</span> ▾
+    </button>
+    <div id="mode-menu" style="display:none;position:absolute;top:40px;left:0;background:rgba(5,8,16,.97);border:1px solid var(--border);border-radius:8px;padding:6px;z-index:9999;min-width:160px;backdrop-filter:blur(12px)">
+      <div class="mode-opt" onclick="switchMode('work')">💼 Work</div>
+      <div class="mode-opt" onclick="switchMode('trading')">📈 Trading</div>
+      <div class="mode-opt" onclick="switchMode('dev')">⌨️ Dev</div>
+      <div class="mode-opt" onclick="switchMode('research')">🔬 Research</div>
+      <div class="mode-opt" onclick="switchMode('focus')">🎯 Focus</div>
+      <div class="mode-opt" onclick="switchMode('night')">🌙 Night</div>
+    </div>
+  </div>
+  <div class="tb-sep"></div>
+
+  <button class="panel-launcher" id="pl-chat"         onclick="openPanel('chat')">💬 Chat</button>
+  <button class="panel-launcher" id="pl-computer"     onclick="openPanel('computer')">🖥 Computer</button>
+  <button class="panel-launcher" id="pl-tasks"        onclick="openPanel('tasks')">✅ Tasks</button>
+  <button class="panel-launcher" id="pl-intelligence" onclick="openPanel('intelligence')">🧠 Intel</button>
+  <button class="panel-launcher" id="pl-weather"      onclick="openPanel('weather')">🌤 Weather</button>
+  <button class="panel-launcher" id="pl-news"         onclick="openPanel('news')">📰 News</button>
+  <button class="panel-launcher" id="pl-notifications" onclick="openPanel('notifications')">🔔 Alerts</button>
+  <button class="panel-launcher" id="pl-research"     onclick="openPanel('research')">🔬 Research</button>
+  <button class="panel-launcher" id="pl-personality"  onclick="openPanel('personality')">⚙️ Config</button>
+
+  <div class="voice-area" id="voice-area">
+    <span id="voice-label" style="font-size:10px;color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Say "Javris…" or click mic</span>
+    <div id="voice-ring" onclick="toggleVoice()" title="Click to start/stop voice">🎤</div>
+    <div id="notif-btn" onclick="openPanel('notifications')">🔔<span id="notif-count"></span></div>
+    <div class="tb-badge"><div class="dot idle" id="ai-dot"></div><span id="ai-label">—</span></div>
+    <div class="tb-badge"><div class="dot idle" id="cloud-dot"></div><span id="cloud-label">Cloud</span></div>
+  </div>
+</div>
+
+<!-- ══ WORKSPACE ══════════════════════════════════════════════════ -->
+<div id="workspace">
+  <div id="workspace-welcome">
+    <div class="ww-inner">
+      <div class="ww-ring">🤖</div>
+      <div style="font-size:18px;font-weight:700;letter-spacing:2px">JAVRIS OS</div>
+      <div style="font-size:12px;margin-top:6px">Click any panel above or say "Javris, open chat"</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TASKBAR ══════════════════════════════════════════════════ -->
+<div id="taskbar"></div>
+
+<!-- ══ VOICE BAR ══════════════════════════════════════════════════ -->
+<div id="voice-bar"></div>
+
+<!-- ══ TOAST CONTAINER ══════════════════════════════════════════ -->
+<div class="toast-container" id="toast-container"></div>
+
+
+<script>
+'use strict';
+// ════════════════════════════════════════════════════════════════
+//  JAVRIS OS — WORKSPACE ENGINE
+// ════════════════════════════════════════════════════════════════
+
+/* ── Panel registry ── */
+const PANEL_DEFS = {
+  chat:          {title:'Chat',          icon:'💬', w:480, h:560},
+  computer:      {title:'Computer',      icon:'🖥', w:680, h:520},
+  tasks:         {title:'Tasks',         icon:'✅', w:360, h:480},
+  intelligence:  {title:'Intelligence',  icon:'🧠', w:400, h:500},
+  notifications: {title:'Notifications', icon:'🔔', w:340, h:440},
+  weather:       {title:'Weather',       icon:'🌤', w:300, h:380},
+  news:          {title:'News',          icon:'📰', w:360, h:480},
+  research:      {title:'Research',      icon:'🔬', w:500, h:560},
+  personality:   {title:'Config',        icon:'⚙️', w:420, h:580},
+};
+
+const panels = {};           // id → {el, minimized, focused}
+let topZ = 100;
+let notifCount = 0;
+
+/* ── Panel system ──────────────────────────────────────────────── */
+function openPanel(id) {
+  if (panels[id]) {
+    const p = panels[id];
+    if (p.minimized) {
+      p.minimized = false;
+      p.el.classList.remove('minimized');
+    }
+    focusPanel(id);
+    return;
+  }
+
+  const def = PANEL_DEFS[id];
+  if (!def) return;
+
+  // Hide welcome screen
+  document.getElementById('workspace-welcome').classList.add('hidden');
+
+  // Position cascaded
+  const offset = Object.keys(panels).length * 28;
+  const ws = document.getElementById('workspace');
+  const maxX = ws.clientWidth - def.w;
+  const maxY = ws.clientHeight - def.h;
+  const x = Math.min(60 + offset, maxX);
+  const y = Math.min(50 + offset, maxY);
+
+  const el = document.createElement('div');
+  el.className = 'panel';
+  el.id = `panel-${id}`;
+  el.style.cssText = `left:${x}px;top:${y}px;width:${def.w}px;height:${def.h}px;z-index:${++topZ}`;
+  el.innerHTML = `
+    <div class="panel-head" data-panel="${id}">
+      <span class="ph-icon">${def.icon}</span>
+      <span class="ph-title">${def.title}</span>
+      <div class="ph-controls">
+        <button class="phc-btn phc-min" onclick="minimizePanel('${id}')" title="Minimize">−</button>
+        <button class="phc-btn phc-max" onclick="maximizePanel('${id}')" title="Maximize">□</button>
+        <button class="phc-btn phc-cls" onclick="closePanel('${id}')" title="Close">×</button>
+      </div>
+    </div>
+    <div class="panel-body" id="pbody-${id}"></div>
+    <div class="resize-handle" data-panel="${id}"></div>
+  `;
+
+  ws.appendChild(el);
+  panels[id] = {el, minimized: false, focused: true};
+
+  makeDraggable(el, el.querySelector('.panel-head'));
+  makeResizable(el, el.querySelector('.resize-handle'));
+
+  el.addEventListener('mousedown', () => focusPanel(id));
+
+  // Load content
+  loadPanelContent(id);
+  focusPanel(id);
+  updateTaskbar();
+  updateLauncher(id, true);
+}
+
+function closePanel(id) {
+  const p = panels[id];
+  if (!p) return;
+  p.el.remove();
+  delete panels[id];
+  updateTaskbar();
+  updateLauncher(id, false);
+  if (Object.keys(panels).length === 0) {
+    document.getElementById('workspace-welcome').classList.remove('hidden');
+  }
+}
+
+function minimizePanel(id) {
+  const p = panels[id];
+  if (!p) return;
+  p.minimized = true;
+  p.el.classList.add('minimized');
+  updateTaskbar();
+}
+
+function maximizePanel(id) {
+  const p = panels[id];
+  if (!p) return;
+  const ws = document.getElementById('workspace');
+  p.el.style.left = '0px';
+  p.el.style.top = '0px';
+  p.el.style.width = ws.clientWidth + 'px';
+  p.el.style.height = ws.clientHeight + 'px';
+  focusPanel(id);
+}
+
+function focusPanel(id) {
+  const p = panels[id];
+  if (!p) return;
+  Object.values(panels).forEach(pp => pp.el.classList.remove('focused'));
+  p.el.style.zIndex = ++topZ;
+  p.el.classList.add('focused');
+}
+
+function updateTaskbar() {
+  const tb = document.getElementById('taskbar');
+  tb.innerHTML = Object.entries(panels).map(([id, p]) => `
+    <div class="taskbar-item ${p.minimized ? '' : 'active'}" onclick="restorePanel('${id}')">
+      <div class="ti-dot"></div>
+      <span>${PANEL_DEFS[id]?.icon || ''} ${PANEL_DEFS[id]?.title || id}</span>
+    </div>`).join('');
+}
+
+function restorePanel(id) {
+  const p = panels[id];
+  if (!p) return;
+  if (p.minimized) { p.minimized = false; p.el.classList.remove('minimized'); }
+  focusPanel(id);
+}
+
+function updateLauncher(id, open) {
+  const btn = document.getElementById(`pl-${id}`);
+  if (btn) btn.classList.toggle('open', open);
+}
+
+/* ── Drag ───────────────────────────────────────────────────── */
+function makeDraggable(panel, handle) {
+  let dx = 0, dy = 0, dragging = false;
+  handle.addEventListener('mousedown', e => {
+    if (e.target.classList.contains('phc-btn')) return;
+    dragging = true;
+    dx = e.clientX - panel.offsetLeft;
+    dy = e.clientY - panel.offsetTop;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const ws = document.getElementById('workspace');
+    const nx = Math.max(0, Math.min(e.clientX - dx, ws.clientWidth - panel.offsetWidth));
+    const ny = Math.max(0, Math.min(e.clientY - dy, ws.clientHeight - panel.offsetHeight));
+    panel.style.left = nx + 'px';
+    panel.style.top = ny + 'px';
+  });
+  document.addEventListener('mouseup', () => { dragging = false; });
+}
+
+/* ── Resize ─────────────────────────────────────────────────── */
+function makeResizable(panel, handle) {
+  let resizing = false, sx, sy, sw, sh;
+  handle.addEventListener('mousedown', e => {
+    resizing = true;
+    sx = e.clientX; sy = e.clientY;
+    sw = panel.offsetWidth; sh = panel.offsetHeight;
+    e.preventDefault(); e.stopPropagation();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!resizing) return;
+    const nw = Math.max(280, sw + (e.clientX - sx));
+    const nh = Math.max(180, sh + (e.clientY - sy));
+    panel.style.width = nw + 'px';
+    panel.style.height = nh + 'px';
+  });
+  document.addEventListener('mouseup', () => { resizing = false; });
+}
+
+/* ── Tile all panels ────────────────────────────────────────── */
+function tileAllPanels() {
+  const ids = Object.keys(panels).filter(id => !panels[id].minimized);
+  if (!ids.length) return;
+  const ws = document.getElementById('workspace');
+  const cols = Math.ceil(Math.sqrt(ids.length));
+  const rows = Math.ceil(ids.length / cols);
+  const pw = ws.clientWidth / cols;
+  const ph = ws.clientHeight / rows;
+  ids.forEach((id, i) => {
+    const col = i % cols, row = Math.floor(i / cols);
+    const p = panels[id].el;
+    p.style.left = (col * pw) + 'px';
+    p.style.top  = (row * ph) + 'px';
+    p.style.width = pw + 'px';
+    p.style.height = ph + 'px';
+  });
+}
+
+/* ── Panel content loaders ──────────────────────────────────── */
+function loadPanelContent(id) {
+  const body = document.getElementById(`pbody-${id}`);
+  if (!body) return;
+  const loaders = {
+    chat: buildChatPanel,
+    computer: buildComputerPanel,
+    tasks: buildTasksPanel,
+    intelligence: buildIntelPanel,
+    notifications: buildNotifsPanel,
+    weather: buildWeatherPanel,
+    news: buildNewsPanel,
+    research: buildResearchPanel,
+    personality: buildPersonalityPanel,
+  };
+  const fn = loaders[id];
+  if (fn) fn(body);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  CHAT PANEL
+// ════════════════════════════════════════════════════════════════
+let chatWs = null;
+let chatStreamEl = null, chatStreamText = '';
+let chatSending = false;
+
+function buildChatPanel(body) {
+  body.innerHTML = `
+    <div class="chat-scroll" id="chat-scroll"></div>
+    <div class="chat-input-strip">
+      <textarea class="chat-ta" id="chat-input" placeholder="Ask Javris… (Enter to send)" rows="1"></textarea>
+      <button class="ibtn send" id="chat-send" onclick="chatSend()">➤</button>
+    </div>`;
+  setupChatInput();
+  connectChatWS();
+}
+
+function setupChatInput() {
+  const ta = document.getElementById('chat-input');
+  if (!ta) return;
+  ta.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); chatSend(); }
+  });
+  ta.addEventListener('input', () => {
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+  });
+}
+
+function connectChatWS() {
+  if (chatWs) return;
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  chatWs = new WebSocket(`${proto}//${location.host}/ws/chat`);
+  chatWs.onopen = () => toast('Javris connected', 'success');
+  chatWs.onclose = () => { chatWs = null; setTimeout(connectChatWS, 3000); };
+  chatWs.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'start') showTyping();
+    else if (d.type === 'chunk') appendChunk(d.text);
+    else if (d.type === 'done') { finalizeStream(); setChatSending(false); }
+    else if (d.type === 'error') { removeTyping(); appendMsg('assistant', '❌ ' + d.text); setChatSending(false); }
+  };
+}
+
+function chatSend() {
+  const ta = document.getElementById('chat-input');
+  if (!ta) return;
+  const msg = ta.value.trim();
+  if (!msg || chatSending) return;
+  appendMsg('user', msg);
+  ta.value = '';
+  ta.style.height = 'auto';
+  setChatSending(true);
+  if (chatWs?.readyState === WebSocket.OPEN) {
+    chatWs.send(JSON.stringify({message: msg}));
+  } else {
+    post('/api/chat', {message: msg}).then(d => {
+      appendMsg('assistant', d.reply || d.error);
+      setChatSending(false);
+    }).catch(e => { appendMsg('assistant', '❌ ' + e.message); setChatSending(false); });
+  }
+}
+
+function appendMsg(role, content) {
+  removeTyping();
+  const scroll = document.getElementById('chat-scroll');
+  if (!scroll) return;
+  const avatar = role === 'user' ? '👤' : '🤖';
+  const row = create('div', `msg ${role}`,
+    `<div class="avatar">${avatar}</div><div class="bubble">${md(content)}</div>`);
+  scroll.appendChild(row);
+  scroll.scrollTop = scroll.scrollHeight;
+}
+
+function showTyping() {
+  removeTyping();
+  const scroll = document.getElementById('chat-scroll');
+  if (!scroll) return;
+  const row = create('div', 'msg assistant', `<div class="avatar">🤖</div><div class="typing-dots"><div class="td"></div><div class="td"></div><div class="td"></div></div>`);
+  row.id = 'typing-row';
+  scroll.appendChild(row);
+  scroll.scrollTop = scroll.scrollHeight;
+}
+
+function removeTyping() { document.getElementById('typing-row')?.remove(); }
+
+function appendChunk(text) {
+  if (!chatStreamEl) {
+    removeTyping();
+    const scroll = document.getElementById('chat-scroll');
+    if (!scroll) return;
+    const row = create('div', 'msg assistant', `<div class="avatar">🤖</div><div class="bubble" id="stream-bubble"></div>`);
+    row.id = 'stream-row';
+    scroll.appendChild(row);
+    chatStreamEl = document.getElementById('stream-bubble');
+    chatStreamText = '';
+  }
+  chatStreamText += text;
+  chatStreamEl.innerHTML = md(chatStreamText);
+  const scroll = document.getElementById('chat-scroll');
+  if (scroll) scroll.scrollTop = scroll.scrollHeight;
+}
+
+function finalizeStream() {
+  document.getElementById('stream-row')?.removeAttribute('id');
+  chatStreamEl = null; chatStreamText = '';
+}
+
+function setChatSending(v) {
+  chatSending = v;
+  const btn = document.getElementById('chat-send');
+  if (btn) btn.disabled = v;
+}
+
+// ════════════════════════════════════════════════════════════════
+//  COMPUTER PANEL
+// ════════════════════════════════════════════════════════════════
+let compWs = null;
+let compSteps = 0;
+
+function buildComputerPanel(body) {
+  body.innerHTML = `
+    <div class="comp-controls">
+      <button class="cbtn" onclick="compInit(true)">⚡ Live Chrome</button>
+      <button class="cbtn" onclick="compInit(false)">🖥 New Browser</button>
+      <button class="cbtn primary" onclick="compShowQuiz()">📝 Quiz</button>
+      <button class="cbtn primary" onclick="compShowAssign()">📚 Assignment</button>
+      <button class="cbtn danger" onclick="compStop()">⏹ Stop</button>
+      <button class="cbtn" onclick="compSnap()">📸</button>
+      <button class="cbtn" onclick="compScroll('down')">↓</button>
+      <button class="cbtn" onclick="compScroll('up')">↑</button>
+    </div>
+    <div id="comp-url-bar" style="display:none;padding:6px 10px;border-bottom:1px solid var(--border);display:flex;gap:6px">
+      <input class="fi" id="comp-task-url" placeholder="Page URL…" style="margin:0;flex:1"/>
+      <input class="fi" id="comp-task-ctx" placeholder="Subject context (optional)…" style="margin:0;flex:1"/>
+      <button class="cbtn primary" id="comp-start-btn" onclick="compStartQueued()">▶ Start</button>
+    </div>
+    <div class="comp-screenshot" id="comp-shot"><div style="color:var(--muted);font-size:11px;text-align:center;margin-top:30px">Connect browser first</div></div>
+    <div class="step-log" id="comp-log"></div>
+  `;
+  connectCompWS();
+  loadCompStatus();
+}
+
+let _compMode = '';
+function compShowQuiz() { _compMode='quiz'; showCompUrlBar('Quiz URL + subject'); }
+function compShowAssign() { _compMode='assignment'; showCompUrlBar('Assignment URL + instructions'); }
+function showCompUrlBar(hint) {
+  const bar = document.getElementById('comp-url-bar');
+  if (bar) { bar.style.display = 'flex'; document.getElementById('comp-task-url').placeholder = hint || 'URL…'; }
+}
+
+async function compStartQueued() {
+  const url = document.getElementById('comp-task-url')?.value.trim();
+  const ctx = document.getElementById('comp-task-ctx')?.value.trim() || '';
+  if (!url) { toast('Enter a URL', 'error'); return; }
+  compSteps = 0;
+  document.getElementById('comp-log').innerHTML = '';
+  if (_compMode === 'quiz') {
+    await post('/api/computer/quiz', {url, subject_context: ctx, max_steps: 80});
+    toast('Quiz agent started! Watch the browser.', 'success');
+  } else if (_compMode === 'assignment') {
+    await post('/api/computer/assignment', {url, instructions: ctx, max_steps: 60});
+    toast('Assignment agent started!', 'success');
+  } else {
+    await post('/api/computer/task', {goal: ctx || 'Complete the task on this page', url, max_steps: 60});
+    toast('Task started!', 'success');
+  }
+  document.getElementById('comp-url-bar').style.display = 'none';
+}
+
+async function compInit(live) {
+  toast(live ? 'Connecting to Chrome…' : 'Launching browser…', 'info');
+  try {
+    const d = await post('/api/computer/init', {use_live_chrome: live});
+    toast('Browser ready!', 'success');
+    connectCompWS();
+    await compSnap();
+  } catch(e) { toast('Browser connect failed', 'error'); }
+}
+
+async function compStop() {
+  await post('/api/computer/stop', {});
+  toast('Task stopped', 'info');
+}
+
+async function compSnap() {
+  try {
+    const d = await post('/api/computer/screenshot', {});
+    const shot = document.getElementById('comp-shot');
+    if (shot && d.screenshot_b64) {
+      shot.innerHTML = `<img src="data:image/png;base64,${d.screenshot_b64}" style="max-width:100%;border-radius:6px;border:1px solid var(--border)"/>`;
+    }
+  } catch {}
+}
+
+async function compScroll(dir) {
+  await post('/api/computer/action', {action:'scroll', value:dir});
+  setTimeout(compSnap, 500);
+}
+
+async function loadCompStatus() {
+  try {
+    const d = await get('/api/computer/status');
+    if (d.browser?.connected) toast('Browser already connected', 'info');
+  } catch {}
+}
+
+function connectCompWS() {
+  if (compWs) return;
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  compWs = new WebSocket(`${proto}//${location.host}/ws/computer`);
+  compWs.onclose = () => { compWs = null; };
+  compWs.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'heartbeat') return;
+    renderCompStep(d);
+    if (['click','navigate','type','submit','check_radio'].includes(d.action)) {
+      setTimeout(compSnap, 1000);
+    }
+    if (d.action === 'complete') {
+      toast('✅ Task complete!', 'success');
+      voiceSpeak('Task completed successfully');
+    }
+    if (d.action === 'failed') {
+      toast('❌ Task failed: ' + d.description?.substring(0,60), 'error');
+    }
+  };
+}
+
+function renderCompStep(s) {
+  compSteps++;
+  const log = document.getElementById('comp-log');
+  if (!log) return;
+  const icons = {click:'🖱',type:'⌨',navigate:'🌐',scroll:'📜',wait:'⏳',submit:'📤',complete:'✅',failed:'❌',check_radio:'🔘',select_option:'▼',press_key:'⌨'};
+  const ic = icons[s.action] || '⚡';
+  const entry = create('div','step-entry',
+    `<span class="step-num">#${s.step||compSteps}</span>
+     <span class="step-desc ${s.success===false?'fail':''}">${ic} ${esc(s.description||'')}</span>`);
+  log.insertBefore(entry, log.firstChild);
+  while (log.children.length > 80) log.lastChild.remove();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  TASKS PANEL
+// ════════════════════════════════════════════════════════════════
+function buildTasksPanel(body) {
+  body.innerHTML = `
+    <div style="padding:8px 10px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-shrink:0">
+      <input class="fi" id="new-task-inp" placeholder="New task title…" style="margin:0;flex:1" onkeydown="if(event.key==='Enter')quickAddTask()"/>
+      <button class="cbtn primary" onclick="quickAddTask()">+ Add</button>
+      <select class="fi fs" id="task-filter-sel" style="margin:0;width:90px" onchange="loadTasks()">
+        <option value="todo">To Do</option><option value="in_progress">In Progress</option>
+        <option value="done">Done</option><option value="all">All</option>
+      </select>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:8px 10px" id="tasks-body">
+      <div style="color:var(--muted);font-size:11px">Loading…</div>
+    </div>`;
+  loadTasks();
+}
+
+async function quickAddTask() {
+  const inp = document.getElementById('new-task-inp');
+  if (!inp || !inp.value.trim()) return;
+  await post('/api/tasks', {action:'create', title: inp.value.trim()});
+  inp.value = '';
+  loadTasks();
+  toast('Task added', 'success');
+}
+
+async function loadTasks() {
+  const status = document.getElementById('task-filter-sel')?.value || 'todo';
+  const body = document.getElementById('tasks-body');
+  if (!body) return;
+  try {
+    const d = await post('/api/tasks', {action:'list', filter_status: status});
+    if (!Array.isArray(d) || !d.length) {
+      body.innerHTML = `<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">No ${status} tasks</div>`;
+      return;
+    }
+    body.innerHTML = d.map(t => `
+      <div class="task-row">
+        <div class="task-cb ${t.status==='done'?'done':''}" onclick="toggleTask('${t.task_id}','${t.status}')">${t.status==='done'?'✓':''}</div>
+        <div class="task-info">
+          <div class="task-title-t">${esc(t.title)}</div>
+          <div class="task-meta">${t.context?t.context+' · ':''}${t.due_date?'📅 '+t.due_date:''}</div>
+        </div>
+        <span class="prio ${t.priority}">${t.priority}</span>
+      </div>`).join('');
+  } catch { body.innerHTML = '<div style="color:var(--red);font-size:11px">Failed to load</div>'; }
+}
+
+async function toggleTask(id, status) {
+  const action = status === 'done' ? 'update' : 'complete';
+  const newStatus = status === 'done' ? 'todo' : 'done';
+  await post('/api/tasks', {action, task_id: id, status: newStatus});
+  loadTasks();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  INTELLIGENCE PANEL
+// ════════════════════════════════════════════════════════════════
+function buildIntelPanel(body) {
+  body.innerHTML = `
+    <div style="padding:10px;flex:1;overflow-y:auto">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+        <div class="stat-mini"><div class="sm-val" id="i-facts">—</div><div class="sm-lbl">Facts</div></div>
+        <div class="stat-mini"><div class="sm-val" id="i-pats">—</div><div class="sm-lbl">Patterns</div></div>
+      </div>
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">Known About You</div>
+      <div id="intel-facts"></div>
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:10px 0 6px">Patterns</div>
+      <div id="intel-pats"></div>
+      <button class="ab sec" style="margin-top:8px" onclick="forceAnalyse()">🔄 Re-analyse</button>
+    </div>`;
+  loadIntel();
+}
+
+async function loadIntel() {
+  try {
+    const d = await get('/api/intelligence');
+    const fl = document.getElementById('intel-facts');
+    const pl = document.getElementById('intel-pats');
+    const ifEl = document.getElementById('i-facts');
+    const ipEl = document.getElementById('i-pats');
+    if (ifEl) ifEl.textContent = d.stats?.total_facts ?? '—';
+    if (ipEl) ipEl.textContent = d.stats?.total_patterns ?? '—';
+    if (fl) fl.innerHTML = (d.facts||[]).slice(0,6).map(f => `
+      <div class="fact-card"><div class="fact-cat">${f.category}</div>${esc(f.statement)}</div>`).join('') || '<div style="color:var(--muted);font-size:11px">Keep chatting to build your model</div>';
+    if (pl) pl.innerHTML = (d.patterns||[]).slice(0,4).map(p => `
+      <div class="fact-card">${esc(p.description)}
+        <div class="pat-bar-wrap"><div class="pat-bar-fill" style="width:${(p.confidence*100).toFixed(0)}%"></div></div>
+      </div>`).join('') || '<div style="color:var(--muted);font-size:11px">No patterns detected yet</div>';
+  } catch {}
+}
+
+async function forceAnalyse() {
+  toast('Analysing…', 'info');
+  await post('/api/intelligence/analyse', {});
+  await loadIntel();
+  toast('Analysis done', 'success');
+}
+
+// ════════════════════════════════════════════════════════════════
+//  NOTIFICATIONS PANEL
+// ════════════════════════════════════════════════════════════════
+const notifLog = [];
+
+function buildNotifsPanel(body) {
+  body.innerHTML = `
+    <div style="padding:8px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-shrink:0">
+      <button class="cbtn" onclick="clearNotifs()">🗑 Clear All</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:8px" id="notifs-list">
+      <div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">No notifications yet</div>
+    </div>`;
+  renderNotifs();
+}
+
+function addNotification(ev) {
+  notifLog.unshift({...ev, received: Date.now()});
+  if (notifLog.length > 100) notifLog.pop();
+  notifCount++;
+  const nc = document.getElementById('notif-count');
+  if (nc) { nc.style.display = 'flex'; nc.textContent = notifCount > 9 ? '9+' : notifCount; }
+  renderNotifs();
+  // Desktop notification
+  if (Notification.permission === 'granted' && (ev.priority === 'high' || ev.priority === 'critical')) {
+    new Notification(`Javris: ${ev.title || ev.event_type}`, {body: ev.message, icon: '/favicon.ico'});
+  }
+}
+
+function renderNotifs() {
+  const list = document.getElementById('notifs-list');
+  if (!list) return;
+  if (!notifLog.length) {
+    list.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">No notifications yet</div>';
+    return;
+  }
+  const icons = {alert:'🚨',suggestion:'💡',digest:'☀️',news_alert:'📰',tool_used:'🔧',morning:'☀️',pattern:'🧠'};
+  list.innerHTML = notifLog.map(n => `
+    <div class="notif-item ${n.priority||'low'}">
+      <div class="ni-title">${icons[n.event_type]||'⚡'} ${esc(n.title||n.event_type||'Alert')}</div>
+      <div class="ni-msg">${esc(n.message||'')}</div>
+      <div class="ni-time">${new Date(n.received||Date.now()).toLocaleTimeString()}</div>
+    </div>`).join('');
+}
+
+function clearNotifs() {
+  notifLog.length = 0;
+  notifCount = 0;
+  const nc = document.getElementById('notif-count');
+  if (nc) nc.style.display = 'none';
+  renderNotifs();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  WEATHER PANEL
+// ════════════════════════════════════════════════════════════════
+function buildWeatherPanel(body) {
+  body.innerHTML = `
+    <div style="padding:8px 10px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-shrink:0">
+      <input class="fi" id="weather-loc" placeholder="City…" style="margin:0;flex:1" onkeydown="if(event.key==='Enter')fetchWeather()"/>
+      <button class="cbtn primary" onclick="fetchWeather()">Get</button>
+    </div>
+    <div id="weather-body" style="flex:1;overflow-y:auto">
+      <div style="color:var(--muted);font-size:11px;text-align:center;padding:30px">Enter a city name</div>
+    </div>`;
+}
+
+async function fetchWeather() {
+  const loc = document.getElementById('weather-loc')?.value.trim() || 'London';
+  const body = document.getElementById('weather-body');
+  if (!body) return;
+  body.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">Loading…</div>';
+  try {
+    const d = await post('/api/chat', {message: `Get weather for ${loc} with forecast`});
+    body.innerHTML = `<div style="padding:12px;font-size:12px;line-height:1.7">${md(d.reply||'No data')}</div>`;
+  } catch { body.innerHTML = '<div style="color:var(--red);font-size:11px;padding:10px">Failed</div>'; }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  NEWS PANEL
+// ════════════════════════════════════════════════════════════════
+function buildNewsPanel(body) {
+  body.innerHTML = `
+    <div style="padding:8px 10px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-shrink:0">
+      <input class="fi" id="news-topic-inp" placeholder="Topic (or leave blank)…" style="margin:0;flex:1" onkeydown="if(event.key==='Enter')fetchNews()"/>
+      <button class="cbtn primary" onclick="fetchNews()">Get</button>
+    </div>
+    <div id="news-body" style="flex:1;overflow-y:auto">
+      <div style="color:var(--muted);font-size:11px;text-align:center;padding:30px">Click Get for headlines</div>
+    </div>`;
+}
+
+async function fetchNews() {
+  const topic = document.getElementById('news-topic-inp')?.value.trim() || '';
+  const body = document.getElementById('news-body');
+  if (!body) return;
+  body.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">Loading…</div>';
+  try {
+    const msg = topic ? `Get top 6 news articles about: ${topic}` : 'Get top 6 news headlines right now';
+    const d = await post('/api/chat', {message: msg});
+    body.innerHTML = `<div style="padding:10px;font-size:12px;line-height:1.7">${md(d.reply||'')}</div>`;
+  } catch { body.innerHTML = '<div style="color:var(--red);font-size:11px;padding:10px">Failed</div>'; }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  RESEARCH PANEL
+// ════════════════════════════════════════════════════════════════
+function buildResearchPanel(body) {
+  body.innerHTML = `
+    <div style="padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0">
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <input class="fi" id="research-topic" placeholder="Research topic… (e.g. 'quantum computing 2025')" style="margin:0;flex:1" onkeydown="if(event.key==='Enter')startResearch()"/>
+        <select class="fi fs" id="research-depth" style="margin:0;width:70px">
+          <option value="2">Quick</option>
+          <option value="3" selected>Deep</option>
+          <option value="5">Max</option>
+        </select>
+        <button class="cbtn primary" onclick="startResearch()">🔬 Go</button>
+      </div>
+      <div style="display:flex;gap:5px">
+        <button class="cbtn" onclick="startResearch('AI advancements 2025')">AI</button>
+        <button class="cbtn" onclick="startResearch('technology news today')">Tech</button>
+        <button class="cbtn" onclick="startResearch('science breakthroughs 2025')">Science</button>
+        <button class="cbtn" onclick="startResearch('financial markets analysis')">Finance</button>
+      </div>
+    </div>
+    <div id="research-status" style="padding:6px 10px;font-size:10px;color:var(--muted);border-bottom:1px solid var(--border);flex-shrink:0;display:none">
+      <span id="research-status-text">Researching…</span>
+    </div>
+    <div id="research-body" style="flex:1;overflow-y:auto;padding:10px">
+      <div style="color:var(--muted);font-size:11px;text-align:center;padding:30px">
+        Enter a topic and click Go to start deep research
+      </div>
+    </div>`;
+}
+
+let researchRunning = false;
+
+async function startResearch(quickTopic) {
+  const topic = quickTopic || document.getElementById('research-topic')?.value?.trim();
+  if (!topic) { toast('Enter a topic first', 'error'); return; }
+  const depth = parseInt(document.getElementById('research-depth')?.value || '3');
+  if (researchRunning) { toast('Research already running', 'info'); return; }
+
+  researchRunning = true;
+  const body = document.getElementById('research-body');
+  const status = document.getElementById('research-status');
+  const statusText = document.getElementById('research-status-text');
+
+  if (body) body.innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">🔬 Researching — this may take 30-60 seconds…</div>';
+  if (status) status.style.display = '';
+  if (statusText) statusText.textContent = `Researching: ${topic}`;
+
+  try {
+    // Research can take several minutes with local AI — use long timeout
+    const r = await fetch('/api/research', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({topic, depth}),
+      signal: AbortSignal.timeout(300000), // 5 min timeout
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    if (body) {
+      body.innerHTML = `
+        <div style="margin-bottom:10px">
+          <div style="font-size:14px;font-weight:700;color:var(--accent);margin-bottom:4px">${esc(d.topic||topic)}</div>
+          <div style="font-size:10px;color:var(--muted)">${d.sources?.length||0} sources · ${d.search_queries?.length||0} queries</div>
+        </div>
+        <div style="font-size:12px;line-height:1.8">${md(d.summary||d.report||'No summary available')}</div>
+        ${(d.sources||[]).length ? `
+        <div style="margin-top:12px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">Sources</div>
+        <div style="margin-top:6px">${(d.sources||[]).slice(0,5).map(s => `
+          <div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:10px">
+            <a href="${esc(s.url||'')}" target="_blank" style="color:var(--accent)">${esc(s.title||s.url||'')}</a>
+          </div>`).join('')}</div>
+        ` : ''}`;
+    }
+    if (status) status.style.display = 'none';
+    toast('Research complete!', 'success');
+    voiceSpeak(`Research on ${topic} is complete. Check the research panel.`);
+  } catch(e) {
+    if (body) body.innerHTML = `<div style="color:var(--red);padding:12px;font-size:12px">❌ Research failed: ${esc(e.message)}</div>`;
+    toast('Research failed', 'error');
+  } finally {
+    researchRunning = false;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  PERSONALITY PANEL
+// ════════════════════════════════════════════════════════════════
+function buildPersonalityPanel(body) {
+  body.innerHTML = `
+    <div style="flex:1;overflow-y:auto;padding:12px">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)">🤖 AI Settings</div>
+      <label class="fl">Anthropic API Key (for Claude + Computer Agent)</label>
+      <div style="display:flex;gap:5px;margin-bottom:7px">
+        <input class="fi" id="pp-apikey" type="password" placeholder="sk-ant-… (paste to enable Claude)" style="margin:0;flex:1"/>
+        <button class="cbtn primary" onclick="saveApiKey()" style="flex-shrink:0">Set</button>
+      </div>
+      <div id="pp-ai-status" style="font-size:10px;color:var(--muted);margin-bottom:10px">Loading…</div>
+
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)">👤 Personality</div>
+      <label class="fl">Your Name</label>
+      <input class="fi" id="pp-name" placeholder="How Javris addresses you"/>
+      <label class="fl">Tone</label>
+      <select class="fi fs" id="pp-tone">
+        <option value="conversational">Conversational</option><option value="concise">Concise</option>
+        <option value="formal">Formal</option><option value="witty">Witty</option>
+      </select>
+      <label class="fl">Domain Interests</label>
+      <input class="fi" id="pp-domains" placeholder="AI, finance, tech, health…"/>
+      <label class="fl">Wake Hour (morning digest)</label>
+      <input class="fi" id="pp-wake" type="number" min="0" max="23" placeholder="7"/>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <input type="checkbox" id="pp-speak"/>
+        <label for="pp-speak" style="font-size:12px;color:var(--text);cursor:pointer">Speak alerts aloud</label>
+      </div>
+      <button class="ab pri" onclick="savePersonality()">💾 Save</button>
+      <div id="pp-ok" style="color:var(--accent3);font-size:11px;display:none;margin-top:6px">✓ Saved</div>
+    </div>`;
+  loadPersonality();
+  loadAiStatus();
+}
+
+async function loadAiStatus() {
+  try {
+    const d = await get('/api/status');
+    const el = document.getElementById('pp-ai-status');
+    if (!el) return;
+    const hasKey = d.model && !d.model.includes('ollama');
+    el.textContent = d.assistant
+      ? `✓ AI Online — ${d.model} | ${d.autonomy_events} autonomy events`
+      : '⚠ AI offline';
+    el.style.color = d.assistant ? 'var(--accent3)' : 'var(--red)';
+  } catch {}
+}
+
+async function saveApiKey() {
+  const key = document.getElementById('pp-apikey')?.value?.trim();
+  if (!key) return;
+  try {
+    const r = await post('/api/config/apikey', {anthropic_api_key: key});
+    toast(r.status === 'saved' ? '✓ API key saved — Claude is now active!' : r.message, r.status === 'saved' ? 'success' : 'info');
+    document.getElementById('pp-apikey').value = '';
+    setTimeout(loadAiStatus, 1000);
+  } catch(e) { toast('Failed to save key', 'error'); }
+}
+
+async function loadPersonality() {
+  try {
+    const d = await get('/api/personality');
+    const s = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    s('pp-name', d.owner_name||'');
+    s('pp-tone', d.tone||'conversational');
+    s('pp-domains', (d.domains||[]).join(', '));
+    s('pp-wake', d.wake_hour??7);
+    const ck = document.getElementById('pp-speak');
+    if (ck) ck.checked = d.speak_proactively||false;
+  } catch {}
+}
+
+async function savePersonality() {
+  const g = id => document.getElementById(id)?.value?.trim();
+  const domains = (g('pp-domains')||'').split(',').map(s=>s.trim()).filter(Boolean);
+  await put('/api/personality', {
+    owner_name: g('pp-name')||undefined,
+    tone: g('pp-tone'),
+    domains,
+    wake_hour: parseInt(g('pp-wake'))||7,
+    speak_proactively: document.getElementById('pp-speak')?.checked||false,
+  });
+  const ok = document.getElementById('pp-ok');
+  if (ok) { ok.style.display=''; setTimeout(()=>ok.style.display='none',2500); }
+  toast('Personality saved', 'success');
+  loadStatus();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  VOICE SYSTEM — Web Speech API (browser-native, ~50ms latency)
+// ════════════════════════════════════════════════════════════════
+let recognition = null;
+let voiceActive = false;
+let voiceSynthesis = window.speechSynthesis;
+let voiceUtterance = null;
+let voicePaused = false;
+
+function initVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { document.getElementById('voice-label').textContent = 'Voice not supported'; return; }
+  recognition = new SR();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+  recognition.maxAlternatives = 1;
+
+  recognition.onresult = e => {
+    let interim = '', final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) final += t;
+      else interim += t;
+    }
+    if (interim) showVoiceBar(interim);
+    if (final) handleVoiceInput(final.trim());
+  };
+
+  recognition.onerror = e => {
+    if (e.error !== 'no-speech') toast('Voice error: ' + e.error, 'error');
+  };
+
+  recognition.onend = () => {
+    if (voiceActive && !voicePaused) {
+      // Auto-restart continuous listening
+      try { recognition.start(); } catch {}
+    } else {
+      setVoiceUI('idle');
+    }
+  };
+}
+
+function toggleVoice() {
+  if (!recognition) initVoice();
+  if (voiceActive) {
+    voiceActive = false;
+    voicePaused = true;
+    try { recognition.stop(); } catch {}
+    setVoiceUI('idle');
+    toast('Voice paused', 'info');
+  } else {
+    voiceActive = true;
+    voicePaused = false;
+    try { recognition.start(); } catch {}
+    setVoiceUI('listening');
+    toast('Voice active — speak naturally', 'success');
+    // Request desktop notification permission
+    if (Notification.permission === 'default') Notification.requestPermission();
+  }
+}
+
+function setVoiceUI(state) {
+  const ring = document.getElementById('voice-ring');
+  if (!ring) return;
+  ring.className = state === 'listening' ? 'listening' : state === 'speaking' ? 'speaking' : '';
+  ring.textContent = state === 'listening' ? '🔴' : state === 'speaking' ? '🔊' : '🎤';
+}
+
+function showVoiceBar(text) {
+  const bar = document.getElementById('voice-bar');
+  if (!bar) return;
+  bar.textContent = text;
+  bar.classList.add('show');
+  document.getElementById('voice-label').textContent = text.substring(0,40);
+}
+
+function hideVoiceBar() {
+  const bar = document.getElementById('voice-bar');
+  if (bar) bar.classList.remove('show');
+}
+
+// ── Voice input handler ───────────────────────────────────────────
+const WAKE_WORDS = ['javris', 'jarvis', 'hey javris', 'ok javris', 'okay javris'];
+let lastWakeTime = 0;
+let voiceCommandMode = false;  // true after wake word, commands execute directly
+
+async function handleVoiceInput(text) {
+  const lower = text.toLowerCase().trim();
+  hideVoiceBar();
+  document.getElementById('voice-label').textContent = text.substring(0, 50);
+
+  // Check wake word
+  const hasWake = WAKE_WORDS.some(w => lower.startsWith(w) || lower.includes(w));
+
+  if (hasWake) {
+    lastWakeTime = Date.now();
+    voiceCommandMode = true;
+    // Strip wake word
+    let cmd = lower;
+    for (const w of WAKE_WORDS) cmd = cmd.replace(w, '').trim();
+    if (cmd) {
+      await routeVoiceCommand(cmd, text.substring(text.toLowerCase().indexOf(lower.replace(WAKE_WORDS.find(w=>lower.includes(w))||'',''))))
+    } else {
+      voiceSpeak("Yes?");
+      toast('Listening for command…', 'info');
+    }
+    return;
+  }
+
+  // In command mode (within 15s of wake word)
+  if (voiceCommandMode && Date.now() - lastWakeTime < 15000) {
+    await routeVoiceCommand(lower, text);
+  }
+  // else: ignore background noise
+}
+
+async function routeVoiceCommand(lower, originalText) {
+  lastWakeTime = Date.now(); // extend window
+  showVoiceBar('⚡ ' + originalText);
+
+  // ── INSTANT UI commands (no server, ~0ms) ─────────────────────
+  const uiMap = [
+    [/open chat|show chat/, () => openPanel('chat')],
+    [/open computer|show browser/, () => openPanel('computer')],
+    [/open tasks?|show tasks?/, () => openPanel('tasks')],
+    [/open (intelligence|intel)|show intel/, () => openPanel('intelligence')],
+    [/open (notifications?|alerts?)|show (notifications?|alerts?)/, () => openPanel('notifications')],
+    [/open weather|show weather/, () => openPanel('weather')],
+    [/open news|show news/, () => openPanel('news')],
+    [/open research|show research/, () => openPanel('research')],
+    [/open (settings?|config|personality)/, () => openPanel('personality')],
+    [/work mode|switch to work/, () => switchMode('work')],
+    [/trading mode|switch to trading/, () => switchMode('trading')],
+    [/dev(eloper)? mode|switch to dev/, () => switchMode('dev')],
+    [/focus mode|switch to focus/, () => switchMode('focus')],
+    [/night mode|switch to night/, () => switchMode('night')],
+    [/research mode|switch to research/, () => switchMode('research')],
+    [/close all|minimize all/, () => Object.keys(panels).forEach(minimizePanel)],
+    [/tile panels?|arrange panels?/, tileAllPanels],
+    [/stop (agent|task|browser|quiz)|cancel task/, () => post('/api/computer/stop',{})],
+    [/scroll down/, () => post('/api/computer/action',{action:'scroll',value:'down'})],
+    [/scroll up/, () => post('/api/computer/action',{action:'scroll',value:'up'})],
+    [/take screenshot|screenshot/, compSnap],
+    [/new session|new chat/, () => post('/api/session/new',{})],
+  ];
+
+  for (const [re, fn] of uiMap) {
+    if (re.test(lower)) {
+      fn();
+      voiceSpeak('Done');
+      toast('⚡ ' + lower.substring(0,40), 'info');
+      setTimeout(hideVoiceBar, 1500);
+      return;
+    }
+  }
+
+  // ── Server command (200ms) ─────────────────────────────────────
+  try {
+    setVoiceUI('speaking');
+    const d = await post('/api/voice/command', {text: originalText, context: ''});
+
+    if (d.is_ui_command && d.ui_params) {
+      if (d.ui_params.panel) openPanel(d.ui_params.panel);
+      if (d.ui_params.action === 'tile_panels') tileAllPanels();
+    }
+
+    if (d.response) {
+      // Inject into chat panel if open
+      if (panels['chat']) appendMsg('assistant', d.response);
+      // Speak it
+      voiceSpeak(d.response);
+      toast('🎤 ' + d.response.substring(0, 80), 'info');
+    }
+
+    // Handle specific actions
+    if (d.action_taken === 'computer_quiz' && d.data?.url) {
+      await post('/api/computer/quiz', {url: d.data.url, max_steps: 80});
+    }
+
+  } catch(e) {
+    voiceSpeak('Sorry, I had an error');
+  }
+
+  setTimeout(hideVoiceBar, 2000);
+  setVoiceUI('listening');
+}
+
+// ── TTS (browser-native, instant) ────────────────────────────────
+function voiceSpeak(text) {
+  if (!text || !text.trim()) return;
+  if (!window.speechSynthesis) return;
+
+  // Cancel any current speech
+  speechSynthesis.cancel();
+
+  const u = new SpeechSynthesisUtterance(text.replace(/[*#`\[\]]/g, '').substring(0, 300));
+  u.rate = 1.1;
+  u.pitch = 1.0;
+  u.volume = 1.0;
+
+  // Pick the best voice
+  const voices = speechSynthesis.getVoices();
+  const preferred = voices.find(v =>
+    v.name.includes('Neural') || v.name.includes('Natural') ||
+    v.name.includes('Zira') || v.name.includes('Google UK') ||
+    (v.lang === 'en-US' && v.localService === false)
+  ) || voices.find(v => v.lang.startsWith('en'));
+  if (preferred) u.voice = preferred;
+
+  u.onstart = () => setVoiceUI('speaking');
+  u.onend = () => { if (voiceActive) setVoiceUI('listening'); };
+  speechSynthesis.speak(u);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  AUTONOMY WEBSOCKET
+// ════════════════════════════════════════════════════════════════
+let autoWs = null;
+
+function connectAutoWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  autoWs = new WebSocket(`${proto}//${location.host}/ws/autonomy`);
+  autoWs.onclose = () => { autoWs = null; setTimeout(connectAutoWS, 5000); };
+  autoWs.onmessage = e => {
+    const ev = JSON.parse(e.data);
+    if (ev.type === 'heartbeat') return;
+
+    // Handle mode changes specially
+    if (ev.event_type === 'mode_change') {
+      handleModeChangeEvent(ev);
+    }
+
+    addNotification(ev);
+
+    // Auto-open notifications panel for high priority
+    if (ev.priority === 'high' || ev.priority === 'critical') {
+      toast(`⚡ ${ev.title}: ${(ev.message||'').substring(0,60)}`, 'info');
+      if (voiceActive && ev.priority === 'critical') {
+        voiceSpeak(ev.message);
+      }
+    }
+  };
+}
+
+// ════════════════════════════════════════════════════════════════
+//  STATUS / API HELPERS
+// ════════════════════════════════════════════════════════════════
+async function loadStatus() {
+  try {
+    const d = await get('/api/status');
+    const dot = document.getElementById('ai-dot');
+    const lbl = document.getElementById('ai-label');
+    const cdot = document.getElementById('cloud-dot');
+    const clbl = document.getElementById('cloud-label');
+    if (dot) dot.className = 'dot ' + (d.assistant ? 'on' : 'off');
+    if (lbl) lbl.textContent = (d.model||'AI').split('-').slice(0,2).join('-');
+    if (cdot) cdot.className = 'dot ' + (d.cloud ? 'on' : 'idle');
+    if (clbl) clbl.textContent = d.cloud ? 'Synced' : 'Local';
+  } catch {}
+}
+
+async function get(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+async function post(url, body) {
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+async function put(url, body) {
+  const r = await fetch(url, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  TOAST
+// ════════════════════════════════════════════════════════════════
+function toast(msg, type='') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const t = create('div', `toast ${type}`, esc(msg));
+  container.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  MARKDOWN
+// ════════════════════════════════════════════════════════════════
+function md(text) {
+  if (!text) return '';
+  return text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/```(\w*)\n?([\s\S]*?)```/g,(_,l,c)=>`<pre><code>${c.trim()}</code></pre>`)
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g,'<em>$1</em>')
+    .replace(/^### (.+)$/gm,'<h3>$1</h3>')
+    .replace(/^## (.+)$/gm,'<h2>$1</h2>')
+    .replace(/^# (.+)$/gm,'<h1>$1</h1>')
+    .replace(/^> (.+)$/gm,'<blockquote>$1</blockquote>')
+    .replace(/^- (.+)$/gm,'<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g,s=>`<ul>${s}</ul>`)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>');
+}
+
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function create(tag, cls, html) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (html !== undefined) e.innerHTML = html;
+  return e;
+}
+
+// ════════════════════════════════════════════════════════════════
+//  MODES SYSTEM
+// ════════════════════════════════════════════════════════════════
+const MODE_META = {
+  work:     {icon:'💼', accent:'#00d4ff'},
+  trading:  {icon:'📈', accent:'#10b981'},
+  dev:      {icon:'⌨️', accent:'#7c3aed'},
+  research: {icon:'🔬', accent:'#ec4899'},
+  focus:    {icon:'🎯', accent:'#f59e0b'},
+  night:    {icon:'🌙', accent:'#4f46e5'},
+};
+
+let _modeMenuOpen = false;
+
+function toggleModeMenu() {
+  _modeMenuOpen = !_modeMenuOpen;
+  const m = document.getElementById('mode-menu');
+  if (m) m.style.display = _modeMenuOpen ? 'block' : 'none';
+}
+
+// Close mode menu when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('#mode-btn') && !e.target.closest('#mode-menu')) {
+    _modeMenuOpen = false;
+    const m = document.getElementById('mode-menu');
+    if (m) m.style.display = 'none';
+  }
+});
+
+async function switchMode(modeId) {
+  _modeMenuOpen = false;
+  document.getElementById('mode-menu').style.display = 'none';
+
+  try {
+    const d = await post('/api/modes/switch', {mode_id: modeId});
+    if (d.error) { toast(d.error, 'error'); return; }
+
+    // Update mode button
+    const meta = MODE_META[modeId] || {};
+    const icon = document.getElementById('mode-icon');
+    const name = document.getElementById('mode-name');
+    if (icon) icon.textContent = meta.icon || '🔧';
+    if (name) name.textContent = d.name || modeId;
+
+    // Update accent color
+    if (meta.accent) {
+      document.documentElement.style.setProperty('--accent', meta.accent);
+    }
+
+    // Close all panels, then open mode's panels
+    Object.keys(panels).forEach(id => closePanel(id));
+    await new Promise(r => setTimeout(r, 100));
+
+    const modePanels = d.panels || [];
+    modePanels.forEach((pid, i) => {
+      setTimeout(() => openPanel(pid), i * 80);
+    });
+
+    // Tile if mode says so
+    if (d.layout === 'tile') {
+      setTimeout(tileAllPanels, modePanels.length * 80 + 200);
+    }
+
+    toast(`${meta.icon || ''} ${d.name || modeId} activated`, 'success');
+    voiceSpeak(`${d.name || modeId} activated`);
+  } catch(e) {
+    toast('Mode switch failed', 'error');
+  }
+}
+
+// Handle mode_change events from autonomy WebSocket
+function handleModeChangeEvent(ev) {
+  const data = ev.data || {};
+  if (data.mode_id) {
+    const meta = MODE_META[data.mode_id] || {};
+    const icon = document.getElementById('mode-icon');
+    const name = document.getElementById('mode-name');
+    if (icon) icon.textContent = data.icon || meta.icon || '🔧';
+    if (name) name.textContent = data.mode_name || data.mode_id;
+    if (data.color_accent) {
+      document.documentElement.style.setProperty('--accent', data.color_accent);
+    }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  KEYBOARD SHORTCUTS
+// ════════════════════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey) {
+    const map = {'1':'chat','2':'computer','3':'tasks','4':'intelligence','5':'weather','6':'news','7':'notifications','8':'research','9':'personality'};
+    if (map[e.key]) { e.preventDefault(); openPanel(map[e.key]); }
+    if (e.key === 't') { e.preventDefault(); tileAllPanels(); }
+    if (e.key === 'm') { e.preventDefault(); toggleVoice(); }
+  }
+});
+
+// ════════════════════════════════════════════════════════════════
+//  BOOT
+// ════════════════════════════════════════════════════════════════
+window.addEventListener('load', async () => {
+  // Load voices (async on some browsers)
+  window.speechSynthesis?.getVoices();
+  setTimeout(() => window.speechSynthesis?.getVoices(), 500);
+
+  await loadStatus();
+  setInterval(loadStatus, 30000);
+  connectChatWS();
+  connectAutoWS();
+
+  // Auto-open chat on first load
+  openPanel('chat');
+
+  // Show hint
+  setTimeout(() => toast('💡 Ctrl+1-9 = panels  |  Ctrl+T = tile  |  Ctrl+M = mic  |  Say "Javris…"', 'info'), 1000);
+});
+</script>
+</body>
+</html>
