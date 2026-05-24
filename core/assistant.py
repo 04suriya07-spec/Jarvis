@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 from typing import AsyncIterator
 
 from core.config import get_config
@@ -24,7 +25,12 @@ from core.memory import MemoryManager, Message
 from core.personality import get_personality, PersonalityProfile
 from core.intelligence import IntelligenceEngine
 from core.autonomy import AutonomyEngine
+from core.ambient import get_ambient_watcher, AmbientWatcher
+from core.audit import get_audit_log
+from core.events import get_event_bus
 from core.llm import LLMRouter
+from core.models import SkillResult
+from core.policy import get_policy_engine
 from storage.manager import StorageManager
 
 logger = get_logger("javris.assistant")
@@ -45,6 +51,10 @@ class Assistant:
         self._voice = None
         self._autonomy_task: asyncio.Task | None = None
         self._router: LLMRouter | None = None
+        self._ambient: AmbientWatcher = get_ambient_watcher()
+        self._audit = get_audit_log()
+        self._events = get_event_bus()
+        self._policy = get_policy_engine()
 
     # ── Initialisation ───────────────────────────────────────
 
@@ -68,6 +78,9 @@ class Assistant:
             tool_dispatch=self._dispatch_tool,
         )
         self._router.init()
+
+        # Ambient watcher — start passive OS context tracking
+        self._ambient.start()
 
         # Autonomy — wire deps, start background loop
         self.autonomy.set_dependencies(
@@ -99,16 +112,17 @@ class Assistant:
         from skills.notes import NotesSkill
         from skills.life.files import FileSkill
         from skills.life.calendar_skill import CalendarSkill
+        from skills.google_calendar import GoogleCalendarSkill
         from skills.life.tasks import TasksSkill
         from skills.life.browser import BrowserSkill
         from skills.finance import FinanceSkill
         from skills.music import MusicSkill
+        from skills.documents import DocumentsSkill
         # ── Skills from openclaw integration ─────────────────
         from skills.github import GitHubSkill
         from skills.notion import NotionSkill
         from skills.obsidian import ObsidianSkill
-        from skills.telegram_notify import TelegramSkill
-        from skills.discord_notify import DiscordSkill
+        from skills.email_skill import EmailSkill
 
         skill_classes = [
             WebSearchSkill,
@@ -120,16 +134,17 @@ class Assistant:
             NotesSkill,
             FileSkill,
             CalendarSkill,
+            GoogleCalendarSkill,
             TasksSkill,
             BrowserSkill,
             FinanceSkill,
             MusicSkill,
+            DocumentsSkill,
             # openclaw-inspired skills
             GitHubSkill,
             NotionSkill,
             ObsidianSkill,
-            TelegramSkill,
-            DiscordSkill,
+            EmailSkill,
         ]
 
         for cls in skill_classes:
@@ -161,6 +176,28 @@ class Assistant:
 
     # ── Chat (main entry point) ───────────────────────────────
 
+    async def _recall_memory(self, user_input: str) -> str:
+        """Semantic-search vector memory and return an injection block."""
+        try:
+            results = await self.memory.semantic_search(user_input, n=5)
+            if not results:
+                return ""
+            snippets = []
+            for r in results:
+                score = r.get("score", 0)
+                if score < 0.3:          # skip low-relevance hits
+                    continue
+                text = r.get("text", "").strip()
+                role = r.get("metadata", {}).get("role", "")
+                if text and role in ("user", "assistant"):
+                    snippets.append(f"[{role}] {text[:180]}")
+            if not snippets:
+                return ""
+            joined = "\n".join(snippets[:4])
+            return f"\n\n[Relevant memory from past conversations]:\n{joined}"
+        except Exception:
+            return ""
+
     def _get_system_prompt(self, voice_mode: bool = False) -> tuple[str, int]:
         """
         Return (system_prompt, max_tokens).
@@ -183,10 +220,12 @@ class Assistant:
             )
             return system, 60
 
+        ambient_ctx = self._ambient.context_string()
         system = (
             f"You are Javris, {owner}'s personal AI assistant. "
             f"Be {tone}, direct, and proactive. Address user as 'Sir'. "
             f"User interests: {domains}. "
+            f"Current context: {ambient_ctx}. "
             "No emojis. Never say 'As an AI'. "
             "Reply in 2-3 sentences unless detail is explicitly requested."
         )
@@ -202,9 +241,14 @@ class Assistant:
             )
         )
 
-        messages          = self.memory.get_context(last_n=20)
+        # Semantic memory recall — inject relevant past context
+        memory_injection = await self._recall_memory(user_input)
+
+        messages           = self.memory.get_context(last_n=20)
         system, max_tokens = self._get_system_prompt()
-        reply             = await self._router.chat(messages, system, max_tokens=max_tokens)
+        if memory_injection:
+            system += memory_injection
+        reply              = await self._router.chat(messages, system, max_tokens=max_tokens)
 
         assistant_msg = await self.memory.add("assistant", reply)
 
@@ -274,10 +318,11 @@ class Assistant:
                 [m.to_dict() for m in self.memory.short.get_history(last_n=10)]
             )
         )
-        messages, (system, max_tokens) = (
-            self.memory.get_context(last_n=20),
-            self._get_system_prompt(),
-        )
+        memory_injection = await self._recall_memory(user_input)
+        messages = self.memory.get_context(last_n=20)
+        system, max_tokens = self._get_system_prompt()
+        if memory_injection:
+            system += memory_injection
         full_reply = ""
 
         async for chunk in self._router.stream(messages, system, max_tokens=max_tokens):
@@ -289,22 +334,105 @@ class Assistant:
     # ── Tool dispatch ─────────────────────────────────────────
 
     async def _dispatch_tool(self, name: str, params: dict) -> str:
+        trace_id = str(uuid.uuid4())
         skill = self._skill_registry.get(name)
         if not skill:
             return f"Unknown tool: {name}"
+
+        decision = self._policy.evaluate(name, params)
+        if not decision.allowed:
+            result = SkillResult(
+                ok=False,
+                error=decision.reason,
+                metadata={
+                    "approval_required": decision.requires_approval,
+                    "risk": decision.risk.value,
+                    "action_hash": decision.action_hash,
+                    "tool": name,
+                },
+            )
+            self._audit.write(
+                action=f"tool:{name}",
+                risk=decision.risk,
+                trace_id=trace_id,
+                input_data=params,
+                result=result,
+                decision="blocked",
+            )
+            await self._events.publish(
+                "tool_blocked",
+                {"tool": name, "policy": decision.to_dict()},
+                trace_id=trace_id,
+            )
+            await self.autonomy.trigger(
+                "approval_required",
+                f"{name} requires approval",
+                priority="medium",
+                data={"tool": name, "policy": decision.to_dict(), "trace_id": trace_id},
+            )
+            return result.model_dump_json()
+
         try:
             logger.info(f"Tool: {name}({list(params.keys())})")
-            result = await skill.run(**params)
+            await self._events.publish(
+                "tool_started",
+                {"tool": name, "params": {k: str(v)[:80] for k, v in params.items()}},
+                trace_id=trace_id,
+            )
+            raw_result = await skill.run(**params)
+            result = skill.normalize_result(raw_result) if hasattr(skill, "normalize_result") else SkillResult.from_raw(raw_result)
+            result_str = result.model_dump_json()
+            self._audit.write(
+                action=f"tool:{name}",
+                risk=decision.risk,
+                trace_id=trace_id,
+                input_data=params,
+                result=result,
+                decision="executed",
+            )
+            await self._events.publish(
+                "tool_finished",
+                {"tool": name, "ok": result.ok, "risk": decision.risk.value},
+                trace_id=trace_id,
+            )
 
-            # Fire an autonomy event for significant tool use
+            # Fire a rich tool_used autonomy event for the HUD visualizer
             await self.autonomy.trigger(
                 "tool_used",
-                f"Used {name}: {str(result)[:60]}",
+                f"{name}",
                 priority="low",
+                data={
+                    "tool": name,
+                    "params": {k: str(v)[:80] for k, v in params.items()},
+                    "result_preview": result_str[:120],
+                    "status": "success" if result.ok else "failed",
+                    "risk": decision.risk.value,
+                    "trace_id": trace_id,
+                },
             )
-            return json.dumps(result) if isinstance(result, (dict, list)) else str(result)
+            return result_str
         except Exception as e:
             logger.error(f"Tool {name} error: {e}")
+            result = SkillResult(ok=False, error=str(e), metadata={"tool": name})
+            self._audit.write(
+                action=f"tool:{name}",
+                risk=decision.risk,
+                trace_id=trace_id,
+                input_data=params,
+                result=result,
+                decision="error",
+            )
+            await self._events.publish(
+                "tool_failed",
+                {"tool": name, "error": str(e)[:120], "risk": decision.risk.value},
+                trace_id=trace_id,
+            )
+            await self.autonomy.trigger(
+                "tool_used",
+                f"{name} failed",
+                priority="low",
+                data={"tool": name, "params": list(params.keys()), "status": "failed", "error": str(e)[:80]},
+            )
             return f"Tool error: {e}"
 
     # ── Helpers ───────────────────────────────────────────────
@@ -327,5 +455,11 @@ class Assistant:
     async def close(self) -> None:
         if self._autonomy_task:
             self._autonomy_task.cancel()
+            try:
+                await self._autonomy_task
+            except asyncio.CancelledError:
+                pass
+        self.autonomy.stop()
+        self._ambient.stop()
         self.intelligence.save()
         await self.memory.close()
