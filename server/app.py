@@ -20,11 +20,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, Query
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,7 +33,14 @@ from pydantic import BaseModel
 
 from core.config import get_config
 from core.logger import get_logger
-
+from core.models import SkillResult
+from core.audit import get_audit_log
+from core.events import get_event_bus
+from core.policy import get_policy_engine
+from core.security.auth import require_api_auth, websocket_authorized
+from core.gemini_live import GeminiLiveSession
+from core.wake_word import WakeWordDetector
+from core.computer_agent import ComputerAgent
 logger = get_logger("javris.server")
 cfg = get_config()
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
@@ -65,31 +73,106 @@ _mode_manager = None
 
 # Computer-agent step subscribers (WebSocket live feed)
 _computer_ws_subscribers: list[asyncio.Queue] = []
+_event_bus = get_event_bus()
+_policy = get_policy_engine()
+_audit = get_audit_log()
+
+
+api_auth = Depends(require_api_auth)
+
+
+def get_assistant():
+    global _assistant
+    return getattr(app.state, 'assistant', _assistant)
+
+
+def get_voice():
+    global _voice
+    return getattr(app.state, 'voice', _voice)
 
 
 def set_dependencies(assistant, voice, cloud, research_agent, digest_agent):
     global _assistant, _voice, _cloud, _research_agent, _digest_agent, _mode_manager
     _assistant = assistant
+    app.state.assistant = assistant
     _voice = voice
+    app.state.voice = voice
     _cloud = cloud
     _research_agent = research_agent
     _digest_agent = digest_agent
     # Init mode manager wired to autonomy
     from core.modes import ModeManager
     _mode_manager = ModeManager(autonomy=assistant.autonomy if assistant else None)
+    app.state.mode_manager = _mode_manager
 
 
 # ── Startup / shutdown ────────────────────────────────────────────
 
+_wake_word_detector = None
+
+async def on_wake_word():
+    logger.info("Wake word triggered! Starting Gemini Live session...")
+    # Autostart Gemini live if not running
+    global _live_session_task, _live_session
+    if not _live_session_task or _live_session_task.done():
+        _live_session = GeminiLiveSession(mode="video")
+        _live_session_task = asyncio.create_task(_live_session.run())
+
+async def _init_app_assistant():
+    """Fallback initialization for when Uvicorn re-imports the module in a worker process."""
+    from core.assistant import Assistant
+    from core.voice import VoiceEngine
+    from cloud.storage import CloudStorage
+    from agents.research_agent import ResearchAgent
+    from agents.morning_digest import MorningDigestAgent
+
+    cloud = CloudStorage()
+    cloud.init()
+    
+    voice = VoiceEngine()
+    await voice.init()
+    
+    assistant = Assistant()
+    assistant._cloud = cloud
+    assistant._voice = voice
+    await assistant.init()
+    
+    research_agent = ResearchAgent(assistant=assistant)
+    digest_agent = MorningDigestAgent(assistant=assistant, voice=voice)
+    
+    return assistant, voice, cloud, research_agent, digest_agent
+
 @app.on_event("startup")
 async def startup():
-    if _assistant:
-        _assistant.start_autonomy()
-        logger.info("Autonomy engine started via server startup")
+    async def _do_init():
+        global _assistant, _voice, _cloud, _research_agent, _digest_agent
+        if _assistant is None:
+            logger.info("Initializing Assistant in-app (background task)...")
+            try:
+                _assistant, _voice, _cloud, _research_agent, _digest_agent = await _init_app_assistant()
+                app.state.assistant = _assistant
+                app.state.voice = _voice
+                
+                if cfg.javris_autonomy_enabled:
+                    _assistant.start_autonomy()
+                    logger.info("Autonomy engine started.")
+                
+                logger.info("Background startup complete. Javris is ready.")
+            except Exception as e:
+                logger.error(f"Background startup failed: {e}", exc_info=True)
+
+    asyncio.create_task(_do_init())
+    logger.info("Server port open. AI models loading in background...")
+        
+    # _wake_word_detector = WakeWordDetector(callback=on_wake_word)
+    # _wake_word_detector.start()
 
 
 @app.on_event("shutdown")
 async def shutdown():
+    global _wake_word_detector
+    if _wake_word_detector:
+        _wake_word_detector.stop()
     if _assistant:
         await _assistant.close()
 
@@ -134,6 +217,13 @@ class AutonomyTriggerRequest(BaseModel):
     message: str
     priority: str = "medium"
 
+class AutonomyTaskRequest(BaseModel):
+    goal: str
+
+class ApprovalRequest(BaseModel):
+    action_hash: str
+    ttl_seconds: int = 600
+
 class TaskRequest(BaseModel):
     action: str
     task_id: Optional[str] = None
@@ -158,15 +248,17 @@ async def dashboard():
 
 @app.get("/api/status")
 async def status():
-    pers = _assistant.personality if _assistant else None
-    intel = _assistant.intelligence if _assistant else None
+    assistant = get_assistant()
+    pers = assistant.personality if assistant else None
+    intel = assistant.intelligence if assistant else None
     return {
-        "status": "online",
+        "status": "online" if assistant else "loading",
+        "ready": assistant is not None,
         "version": "2.0.0",
-        "assistant": _assistant is not None,
+        "assistant": assistant is not None,
         "voice": _voice is not None,
         "cloud": _cloud.available if _cloud else False,
-        "model": cfg.javris_claude_model,
+        "model": cfg.javris_primary_model,
         "tts_engine": cfg.tts_engine,
         "stt_engine": cfg.stt_engine,
         "owner": pers.owner_name if pers else "Unknown",
@@ -182,6 +274,36 @@ async def status():
     }
 
 
+@app.get("/api/system")
+async def system_health():
+    """Live system vitals for the HUD: CPU, RAM, disk, ambient context."""
+    import psutil
+    cpu   = psutil.cpu_percent(interval=0.2)
+    mem   = psutil.virtual_memory()
+    disk_path = "C:\\" if os.name == "nt" else "/"
+    disk  = psutil.disk_usage(disk_path)
+    net   = psutil.net_io_counters()
+
+    ambient_ctx = {}
+    if _assistant and hasattr(_assistant, "_ambient"):
+        ambient_ctx = _assistant._ambient.snapshot.to_dict()
+
+    return {
+        "cpu_percent":  round(cpu, 1),
+        "cpu":          round(cpu, 1),
+        "ram_percent":  round(mem.percent, 1),
+        "memory":       round(mem.percent, 1),
+        "ram_used_gb":  round(mem.used / 1e9, 2),
+        "ram_total_gb": round(mem.total / 1e9, 2),
+        "disk_percent": round(disk.percent, 1),
+        "disk_free_gb": round(disk.free / 1e9, 1),
+        "net_sent_mb":  round(net.bytes_sent / 1e6, 1),
+        "net_recv_mb":  round(net.bytes_recv / 1e6, 1),
+        "ambient":      ambient_ctx,
+        "timestamp":    time.time(),
+    }
+
+
 @app.get("/api/llm/health")
 async def llm_health():
     """Per-provider circuit breaker state, UCB1 scores, latency percentiles, cache stats."""
@@ -190,7 +312,7 @@ async def llm_health():
     return _assistant._router.health_report()
 
 
-@app.post("/api/llm/reset/{provider}")
+@app.post("/api/llm/reset/{provider}", dependencies=[api_auth])
 async def llm_reset_circuit(provider: str):
     """Manually reset a provider's circuit breaker (admin)."""
     if not _assistant or not _assistant._router:
@@ -201,7 +323,7 @@ async def llm_reset_circuit(provider: str):
     return {"status": "reset", "provider": provider}
 
 
-@app.post("/api/llm/cache/invalidate")
+@app.post("/api/llm/cache/invalidate", dependencies=[api_auth])
 async def llm_cache_invalidate():
     """Clear the LLM response cache."""
     if not _assistant or not _assistant._router:
@@ -214,11 +336,12 @@ async def llm_cache_invalidate():
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
-    if not _assistant:
+    assistant = get_assistant()
+    if not assistant:
         raise HTTPException(503, "Assistant not initialised")
     try:
-        reply = await _assistant.chat(req.message)
-        return {"reply": reply, "session_id": _assistant.memory.short.session_id}
+        reply = await assistant.chat(req.message)
+        return {"reply": reply, "session_id": assistant.memory.short.session_id}
     except Exception as e:
         logger.error(f"Chat error: {e}")
         raise HTTPException(500, str(e))
@@ -227,6 +350,10 @@ async def chat(req: ChatRequest):
 @app.websocket("/ws/chat")
 async def ws_chat(websocket: WebSocket):
     await websocket.accept()
+    if not websocket_authorized(websocket):
+        await websocket.send_json({"type": "error", "text": "Unauthorized"})
+        await websocket.close()
+        return
     logger.info("Chat WS connected")
     try:
         while True:
@@ -236,19 +363,20 @@ async def ws_chat(websocket: WebSocket):
             if not user_msg:
                 continue
 
-            if not _assistant:
+            assistant = get_assistant()
+            if not assistant:
                 await websocket.send_json({"type": "error", "text": "Not ready"})
                 continue
 
             await websocket.send_json({"type": "start"})
             full = ""
-            async for chunk in _assistant.stream_chat(user_msg):
+            async for chunk in assistant.stream_chat(user_msg):
                 full += chunk
                 await websocket.send_json({"type": "chunk", "text": chunk})
 
             await websocket.send_json({
                 "type": "done",
-                "session_id": _assistant.memory.short.session_id,
+                "session_id": assistant.memory.short.session_id,
             })
     except WebSocketDisconnect:
         logger.info("Chat WS disconnected")
@@ -261,10 +389,85 @@ async def ws_chat(websocket: WebSocket):
 
 # ── Autonomy WebSocket (live event feed) ─────────────────────────
 
+@app.websocket("/ws")
+async def ws_unified(websocket: WebSocket):
+    """
+    Unified WebSocket — multiplexes chat streaming + autonomy events.
+    Frontend sends: {"type":"chat","message":"..."}
+    Server sends:
+      {"type":"chunk","text":"..."}        — streaming chat token
+      {"type":"done","session_id":"..."}   — chat complete
+      {"type":"autonomy_event",...}        — autonomy/ambient push
+      {"type":"heartbeat","ts":...}        — keepalive
+    """
+    await websocket.accept()
+    if not websocket_authorized(websocket):
+        await websocket.send_json({"type": "error", "text": "Unauthorized"})
+        await websocket.close()
+        return
+    logger.info("Unified WS connected")
+
+    assistant = get_assistant()
+    if not assistant:
+        await websocket.send_json({"type": "error", "text": "Assistant not ready"})
+        await websocket.close()
+        return
+
+    autonomy_q = assistant.autonomy.subscribe()
+
+    async def _push_autonomy():
+        """Background task: forward autonomy events to the WS."""
+        while True:
+            try:
+                event = await asyncio.wait_for(autonomy_q.get(), timeout=25)
+                await websocket.send_json({"type": "autonomy_event", **event})
+            except asyncio.TimeoutError:
+                await websocket.send_json({"type": "heartbeat", "ts": time.time()})
+            except Exception:
+                break
+
+    push_task = asyncio.create_task(_push_autonomy())
+
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            payload = json.loads(raw)
+            msg_type = payload.get("type", "chat")
+
+            if msg_type == "chat":
+                user_msg = payload.get("message", "")
+                if not user_msg:
+                    continue
+                await websocket.send_json({"type": "start"})
+                full = ""
+                async for chunk in assistant.stream_chat(user_msg):
+                    full += chunk
+                    await websocket.send_json({"type": "chunk", "text": chunk})
+                await websocket.send_json({
+                    "type": "done",
+                    "session_id": assistant.memory.short.session_id,
+                })
+
+            elif msg_type == "ping":
+                await websocket.send_json({"type": "pong", "ts": time.time()})
+
+    except WebSocketDisconnect:
+        logger.info("Unified WS disconnected")
+    except Exception as e:
+        logger.debug(f"Unified WS error: {e}")
+    finally:
+        push_task.cancel()
+        assistant.autonomy.unsubscribe(autonomy_q)
+
+
 @app.websocket("/ws/autonomy")
 async def ws_autonomy(websocket: WebSocket):
     """Push autonomy events in real-time to the dashboard."""
     await websocket.accept()
+    if not websocket_authorized(websocket):
+        await websocket.send_json({"error": "Unauthorized"})
+        await websocket.close()
+        return
     logger.info("Autonomy WS connected")
 
     if not _assistant:
@@ -296,36 +499,88 @@ async def get_autonomy_events(
     limit: int = Query(50),
     event_type: str = Query(""),
 ):
-    if not _assistant:
-        raise HTTPException(503, "Not ready")
-    events = _assistant.autonomy.get_recent_events(limit=limit, event_type=event_type)
-    stats = _assistant.autonomy.get_stats()
+    assistant = get_assistant()
+    if not assistant:
+        raise HTTPException(503, "Not ready (Assistant missing)")
+    events = assistant.autonomy.get_recent_events(limit=limit, event_type=event_type)
+    stats = assistant.autonomy.get_stats()
     return {"events": events, "stats": stats}
 
 
-@app.post("/api/autonomy/trigger")
+@app.post("/api/autonomy/trigger", dependencies=[api_auth])
 async def trigger_autonomy(req: AutonomyTriggerRequest):
-    if not _assistant:
-        raise HTTPException(503, "Not ready")
-    await _assistant.autonomy.trigger(req.event_type, req.message, req.priority)
+    assistant = get_assistant()
+    if not assistant:
+        raise HTTPException(503, "Not ready (Assistant missing)")
+    await assistant.autonomy.trigger(req.event_type, req.message, req.priority)
     return {"status": "triggered"}
 
+@app.post("/api/autonomy/task", dependencies=[api_auth])
+async def trigger_autonomous_task(req: AutonomyTaskRequest):
+    """Start an autonomous task driven by Planner and Executor."""
+    assistant = get_assistant()
+    if not assistant:
+        raise HTTPException(503, "Not ready (Assistant missing)")
+    
+    # We trigger the background execution
+    asyncio.create_task(assistant.autonomy.execute_autonomous_task(req.goal))
+    return {"status": "task_started", "goal": req.goal}
 
-@app.post("/api/autonomy/dismiss/{event_id}")
+
+@app.post("/api/autonomy/dismiss/{event_id}", dependencies=[api_auth])
 async def dismiss_event(event_id: str):
-    if not _assistant:
-        raise HTTPException(503, "Not ready")
-    _assistant.autonomy.dismiss(event_id)
+    assistant = get_assistant()
+    if not assistant:
+        raise HTTPException(503, "Not ready (Assistant missing)")
+    assistant.autonomy.dismiss(event_id)
     return {"status": "dismissed"}
 
+
+@app.post("/api/policy/approve", dependencies=[api_auth])
+async def approve_action(req: ApprovalRequest):
+    """Approve a pending action hash for a short time window."""
+    _policy.approve(req.action_hash, ttl_seconds=req.ttl_seconds)
+    _audit.write(
+        action="policy:approve",
+        actor="user",
+        input_data=req.model_dump(),
+        decision="approved",
+    )
+    await _event_bus.publish("approval_granted", req.model_dump())
+    return {"status": "approved", "action_hash": req.action_hash, "ttl_seconds": req.ttl_seconds}
+
+
+# ── Gemini Live ───────────────────────────────────────────────────
+
+_live_session_task = None
+_live_session = None
+
+@app.post("/api/gemini-live/start")
+async def start_gemini_live():
+    global _live_session_task, _live_session
+    if _live_session_task and not _live_session_task.done():
+        return {"status": "already_running"}
+    
+    _live_session = GeminiLiveSession(mode="video")
+    _live_session_task = asyncio.create_task(_live_session.run())
+    return {"status": "started"}
+
+@app.post("/api/gemini-live/stop")
+async def stop_gemini_live():
+    global _live_session
+    if _live_session:
+        await _live_session.stop()
+        _live_session = None
+    return {"status": "stopped"}
 
 # ── Intelligence ──────────────────────────────────────────────────
 
 @app.get("/api/intelligence")
 async def get_intelligence():
-    if not _assistant:
-        raise HTTPException(503, "Not ready")
-    intel = _assistant.intelligence
+    assistant = get_assistant()
+    if not assistant:
+        raise HTTPException(503, "Not ready (Assistant missing)")
+    intel = assistant.intelligence
     return {
         "stats": intel.get_stats(),
         "facts": intel.get_all_facts(),
@@ -336,38 +591,42 @@ async def get_intelligence():
 
 @app.post("/api/intelligence/analyse")
 async def force_analyse():
-    if not _assistant:
-        raise HTTPException(503, "Not ready")
-    msgs = [m.to_dict() for m in _assistant.memory.short.get_history()]
-    await _assistant.intelligence.analyse(msgs)
-    return {"status": "analysed", "facts": len(_assistant.intelligence.user_facts)}
+    assistant = get_assistant()
+    if not assistant:
+        raise HTTPException(503, "Not ready (Assistant missing)")
+    msgs = [m.to_dict() for m in assistant.memory.short.get_history()]
+    await assistant.intelligence.analyse(msgs)
+    return {"status": "analysed", "facts": len(assistant.intelligence.user_facts)}
 
 
 # ── Personality ───────────────────────────────────────────────────
 
 @app.get("/api/personality")
 async def get_personality_profile():
-    if not _assistant:
-        raise HTTPException(503, "Not ready")
-    return _assistant.personality.to_dict()
+    assistant = get_assistant()
+    if not assistant:
+        raise HTTPException(503, "Not ready (Assistant missing)")
+    return assistant.personality.to_dict()
 
 
 @app.put("/api/personality")
 async def update_personality(req: PersonalityUpdateRequest):
-    if not _assistant:
-        raise HTTPException(503, "Not ready")
+    assistant = get_assistant()
+    if not assistant:
+        raise HTTPException(503, "Not ready (Assistant missing)")
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
-    _assistant.update_personality(**updates)
-    return {"status": "updated", "profile": _assistant.personality.to_dict()}
+    assistant.update_personality(**updates)
+    return {"status": "updated", "profile": assistant.personality.to_dict()}
 
 
 # ── Sessions / Memory ─────────────────────────────────────────────
 
 @app.get("/api/sessions")
 async def get_sessions():
-    if not _assistant:
-        raise HTTPException(503, "Not ready")
-    sessions = await _assistant.memory.long.get_sessions(limit=20)
+    assistant = get_assistant()
+    if not assistant:
+        raise HTTPException(503, "Not ready (Assistant missing)")
+    sessions = await assistant.memory.long.get_sessions(limit=20)
     if _cloud and _cloud.available:
         cloud_sessions = _cloud.get_sessions(limit=20)
         existing = {s["session_id"] for s in sessions}
@@ -379,24 +638,27 @@ async def get_sessions():
 
 @app.get("/api/sessions/{session_id}")
 async def get_session(session_id: str):
-    if not _assistant:
-        raise HTTPException(503, "Not ready")
-    messages = await _assistant.memory.long.get_session_messages(session_id)
+    assistant = get_assistant()
+    if not assistant:
+        raise HTTPException(503, "Not ready (Assistant missing)")
+    messages = await assistant.memory.long.get_session_messages(session_id)
     return {"session_id": session_id, "messages": messages}
 
 
 @app.post("/api/memory/search")
 async def memory_search(req: MemorySearchRequest):
-    if not _assistant:
-        raise HTTPException(503, "Not ready")
-    return {"query": req.query, "results": await _assistant.search_memory(req.query)}
+    assistant = get_assistant()
+    if not assistant:
+        raise HTTPException(503, "Not ready (Assistant missing)")
+    return {"query": req.query, "results": await assistant.search_memory(req.query)}
 
 
 @app.post("/api/memory/remember")
 async def remember(req: RememberRequest):
-    if not _assistant:
-        raise HTTPException(503, "Not ready")
-    await _assistant.remember(req.category, req.content)
+    assistant = get_assistant()
+    if not assistant:
+        raise HTTPException(503, "Not ready (Assistant missing)")
+    await assistant.remember(req.category, req.content)
     return {"status": "remembered"}
 
 
@@ -480,14 +742,16 @@ async def voice_listen_once():
     Trigger a single listen → AI → speak cycle with Sentence Streaming.
     Javris starts speaking sentences as they are generated.
     """
-    if not _voice:
+    voice = get_voice()
+    assistant = get_assistant()
+    if not voice:
         raise HTTPException(503, "Voice not initialised")
-    if not _assistant:
+    if not assistant:
         raise HTTPException(503, "Assistant not ready")
 
     try:
         # 1. Listen (Now dynamic VAD)
-        text = await _voice.listen()
+        text = await voice.listen()
         if not text:
             return {"transcript": "", "reply": ""}
 
@@ -498,7 +762,7 @@ async def voice_listen_once():
         async def _process_stream():
             nonlocal sentence_buffer, full_reply
             logger.info("AI starting to think...")
-            async for chunk in _assistant.stream_chat(text):
+            async for chunk in assistant.stream_chat(text):
                 full_reply += chunk
                 sentence_buffer += chunk
                 
@@ -507,14 +771,14 @@ async def voice_listen_once():
                     utterance = sentence_buffer.strip()
                     if len(utterance) > 10: # Only speak if it's a meaningful fragment
                         logger.info(f"Speaking segment: '{utterance}'")
-                        asyncio.create_task(_voice.speak(utterance))
+                        asyncio.create_task(voice.speak(utterance))
                         sentence_buffer = ""
 
             # Speak any remaining text at the end
             final_part = sentence_buffer.strip()
             if final_part:
                 logger.info(f"Speaking final segment: '{final_part}'")
-                await _voice.speak(final_part)
+                await voice.speak(final_part)
             
             logger.info("AI finished speaking.")
 
@@ -529,9 +793,10 @@ async def voice_listen_once():
 
 @app.post("/api/voice/speak")
 async def speak(req: SpeakRequest):
-    if not _voice:
+    voice = get_voice()
+    if not voice:
         raise HTTPException(503, "Voice not initialised")
-    asyncio.create_task(_voice.speak(req.text))
+    asyncio.create_task(voice.speak(req.text))
     return {"status": "speaking"}
 
 
@@ -557,7 +822,7 @@ async def ws_voice(websocket: WebSocket):
 
             try:
                 if _voice._stt:
-                    text = await asyncio.get_event_loop().run_in_executor(
+                    text = await asyncio.get_running_loop().run_in_executor(
                         None, _voice._stt.transcribe, tmp
                     )
                 else:
@@ -640,7 +905,7 @@ async def current_mode():
 class ApiKeyRequest(BaseModel):
     anthropic_api_key: str = ""
 
-@app.post("/api/config/apikey")
+@app.post("/api/config/apikey", dependencies=[api_auth])
 async def set_api_key(req: ApiKeyRequest):
     """
     Hot-swap the Anthropic API key without restarting.
@@ -771,9 +1036,8 @@ def _get_computer_agent():
     return _computer_agent
 
 
-async def _ensure_computer_agent(use_live: bool = True) -> "ComputerAgent":
+async def _ensure_computer_agent(use_live: bool = True) -> ComputerAgent:
     global _computer_agent
-    from core.computer_agent import ComputerAgent
     if _computer_agent is None:
         _computer_agent = ComputerAgent()
     if not _computer_agent.browser.connected:
@@ -805,7 +1069,7 @@ def _broadcast_step(step) -> None:
             pass
 
 
-@app.post("/api/computer/init")
+@app.post("/api/computer/init", dependencies=[api_auth])
 async def computer_init(req: ComputerInitRequest):
     """Connect browser agent to live Chrome or launch new browser."""
     agent = await _ensure_computer_agent(use_live=req.use_live_chrome)
@@ -820,7 +1084,7 @@ async def computer_status():
     return {"status": "ready", **agent.get_status()}
 
 
-@app.post("/api/computer/task")
+@app.post("/api/computer/task", dependencies=[api_auth])
 async def computer_task(req: ComputerTaskRequest):
     """Start a generic autonomous browser task."""
     agent = await _ensure_computer_agent()
@@ -837,7 +1101,7 @@ async def computer_task(req: ComputerTaskRequest):
     return {"status": "started", "goal": req.goal}
 
 
-@app.post("/api/computer/quiz")
+@app.post("/api/computer/quiz", dependencies=[api_auth])
 async def computer_quiz(req: ComputerQuizRequest):
     """Start autonomous quiz completion."""
     agent = await _ensure_computer_agent()
@@ -858,7 +1122,7 @@ async def computer_quiz(req: ComputerQuizRequest):
     }
 
 
-@app.post("/api/computer/assignment")
+@app.post("/api/computer/assignment", dependencies=[api_auth])
 async def computer_assignment(req: ComputerAssignmentRequest):
     """Start autonomous assignment filling."""
     agent = await _ensure_computer_agent()
@@ -909,7 +1173,7 @@ async def computer_task_detail(task_id: str):
     }
 
 
-@app.post("/api/computer/stop")
+@app.post("/api/computer/stop", dependencies=[api_auth])
 async def computer_stop():
     agent = _get_computer_agent()
     if agent:
@@ -917,7 +1181,7 @@ async def computer_stop():
     return {"status": "stop_requested"}
 
 
-@app.post("/api/computer/pause")
+@app.post("/api/computer/pause", dependencies=[api_auth])
 async def computer_pause(paused: bool = True):
     agent = _get_computer_agent()
     if agent:
@@ -928,7 +1192,7 @@ async def computer_pause(paused: bool = True):
     return {"status": "paused" if paused else "resumed"}
 
 
-@app.post("/api/computer/screenshot")
+@app.post("/api/computer/screenshot", dependencies=[api_auth])
 async def computer_screenshot():
     """Take a screenshot of the current browser page."""
     agent = _get_computer_agent()
@@ -942,7 +1206,7 @@ async def computer_screenshot():
     return {"source": "browser", "screenshot_b64": b64}
 
 
-@app.post("/api/computer/action")
+@app.post("/api/computer/action", dependencies=[api_auth])
 async def computer_action(req: ComputerActionRequest):
     """Execute a single manual browser action."""
     agent = await _ensure_computer_agent()
@@ -975,6 +1239,10 @@ async def ws_computer(websocket: WebSocket):
     Sends a JSON event for every action Javris takes.
     """
     await websocket.accept()
+    if not websocket_authorized(websocket):
+        await websocket.send_json({"error": "Unauthorized"})
+        await websocket.close()
+        return
     logger.info("Computer WS connected")
 
     q: asyncio.Queue = asyncio.Queue(maxsize=100)
@@ -1110,7 +1378,7 @@ async def list_skills():
     return {"count": len(skills), "skills": skills}
 
 
-@app.post("/api/skills/{skill_name}")
+@app.post("/api/skills/{skill_name}", dependencies=[api_auth])
 async def run_skill(skill_name: str, request: Request):
     """Direct skill invocation endpoint. POST body = skill kwargs (JSON)."""
     if not _assistant:
@@ -1122,8 +1390,46 @@ async def run_skill(skill_name: str, request: Request):
         body = await request.json()
     except Exception:
         body = {}
+    decision = _policy.evaluate(skill_name, body)
+    if not decision.allowed:
+        result = SkillResult(
+            ok=False,
+            error=decision.reason,
+            metadata={
+                "approval_required": decision.requires_approval,
+                "risk": decision.risk.value,
+                "action_hash": decision.action_hash,
+                "skill": skill_name,
+            },
+        )
+        _audit.write(
+            action=f"skill:{skill_name}",
+            actor="api",
+            risk=decision.risk,
+            input_data=body,
+            result=result,
+            decision="blocked",
+        )
+        return {"skill": skill_name, "result": result.model_dump()}
     try:
-        result = await skill.run(**body)
-        return {"skill": skill_name, "result": result}
+        raw = await skill.run(**body)
+        result = skill.normalize_result(raw) if hasattr(skill, "normalize_result") else SkillResult.from_raw(raw)
+        _audit.write(
+            action=f"skill:{skill_name}",
+            actor="api",
+            risk=decision.risk,
+            input_data=body,
+            result=result,
+            decision="executed",
+        )
+        return {"skill": skill_name, "result": result.model_dump()}
     except Exception as e:
+        _audit.write(
+            action=f"skill:{skill_name}",
+            actor="api",
+            risk=decision.risk,
+            input_data=body,
+            result={"error": str(e)},
+            decision="error",
+        )
         raise HTTPException(500, f"Skill error: {e}")

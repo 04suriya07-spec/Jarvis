@@ -268,7 +268,7 @@ class VoiceEngine:
         """Load STT model and configure TTS."""
         if cfg.stt_engine == "whisper_local":
             self._stt = WhisperSTT(cfg.whisper_model)
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, self._stt.load)
 
         if cfg.tts_engine == "elevenlabs" and cfg.elevenlabs_api_key:
@@ -280,7 +280,7 @@ class VoiceEngine:
 
     async def listen(self) -> str:
         """Record from microphone and return transcribed text."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         wav_bytes = await loop.run_in_executor(None, self._mic.record)
         if not wav_bytes:
             return ""
@@ -310,7 +310,7 @@ class VoiceEngine:
         logger.debug(f"Speaking: {text[:80]}...")
 
         if cfg.tts_engine == "pyttsx3":
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, self._pyttsx3.synthesize_and_play, text)
             return
 
@@ -320,7 +320,7 @@ class VoiceEngine:
             audio = await self._edge_tts.synthesize(text)
 
         if audio:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, _play_audio_bytes, audio)
 
     async def listen_once(self) -> str:

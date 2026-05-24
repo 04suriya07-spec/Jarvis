@@ -17,6 +17,7 @@ This file handles Tier 2 routing and returns a structured action.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import dataclass, field
 from typing import Callable, Optional
@@ -53,12 +54,14 @@ COMMAND_PATTERNS: list[tuple] = [
         lambda m: {}),
 
     # Weather
-    (r"(what'?s?|get|show)\s+(the\s+)?weather(\s+in\s+(.+))?", "weather", "get_weather",
-        lambda m: {"location": (m.group(4) or "").strip() or "current location"}),
+    (r"(what'?s?(\s+is)?|get|show|how'?s?(\s+the)?)\s+(the\s+)?weather(\s+in\s+(.+))?", "weather", "get_weather",
+        lambda m: {"location": (m.group(6) or "").strip() or "current location"}),
+    (r"weather(\s+in\s+(.+))?", "weather", "get_weather",
+        lambda m: {"location": (m.group(2) or "").strip() or "current location"}),
 
     # News
-    (r"(what'?s?|get|show|any)\s+(the\s+)?(latest\s+)?news(\s+(about|on)\s+(.+))?", "news", "get_news",
-        lambda m: {"topic": (m.group(6) or "").strip()}),
+    (r"(what'?s?(\s+is)?|get|show|any)\s+(the\s+)?(latest\s+)?news(\s+(about|on)\s+(.+))?", "news", "get_news",
+        lambda m: {"topic": (m.group(7) or "").strip()}),
 
     # Reminders
     (r"(remind me|set a reminder|alert me)(.+)(at|in)\s+(.+)", "reminder", "set_reminder",
@@ -75,8 +78,8 @@ COMMAND_PATTERNS: list[tuple] = [
         lambda m: {"content": m.group(2).strip()}),
 
     # Search
-    (r"(search|look up|find|google)\s+(.+)", "web_search", "web_search",
-        lambda m: {"query": m.group(2).strip()}),
+    (r"(search|look up|find|google)\s+(for\s+)?(.+)", "web_search", "web_search",
+        lambda m: {"query": m.group(3).strip()}),
 
     # System
     (r"(take a?\s+)?screenshot", "screenshot", "screenshot",
@@ -266,6 +269,7 @@ async def execute_command(cmd: VoiceCommand, assistant, autonomy=None) -> dict:
             return {"response": f"Starting research on: {cmd.params.get('topic','')}. Check the Research panel.", "action_taken": "research_started", "data": cmd.params}
 
         elif action == "morning_digest":
+            asyncio.create_task(assistant.autonomy.trigger("morning_digest", "Voice request", priority="high"))
             return {"response": "Generating your morning briefing...", "action_taken": "digest", "data": {}}
 
         elif action == "screenshot":
@@ -296,6 +300,8 @@ async def execute_command(cmd: VoiceCommand, assistant, autonomy=None) -> dict:
             return {"response": f"Executing: {action}", "action_taken": action, "data": cmd.params}
 
     except Exception as e:
+        from core.logger import get_logger
+        get_logger("javris.voice_commands").error(f"execute_command error: {e}", exc_info=True)
         return {"response": f"Sorry, I hit an error: {e}", "action_taken": "error", "data": {}}
 
     # Fallback to chat

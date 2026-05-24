@@ -27,7 +27,10 @@ from rich.panel import Panel
 from rich.prompt import Prompt, Confirm
 from rich.markdown import Markdown
 
+from core.logger import get_logger
+
 console = Console()
+logger = get_logger("javris.main")
 
 
 def banner():
@@ -45,12 +48,10 @@ async def _init_all(with_voice: bool = False):
     from agents.research_agent import ResearchAgent
     from agents.morning_digest import MorningDigestAgent
 
-    log = get_logger("javris.main")
-
     # Cloud
     cloud = CloudStorage()
     cloud_ok = cloud.init()
-    log.info(f"Cloud: {'connected' if cloud_ok else 'local only'}")
+    logger.info(f"Cloud: {'connected' if cloud_ok else 'local only'}")
 
     # Assistant (wires personality + intelligence + autonomy internally)
     assistant = Assistant()
@@ -97,22 +98,22 @@ def serve(host, port, voice):
         from server.app import app, set_dependencies
 
         cfg = get_config()
-        assistant, voice_engine, cloud, research_agent, digest_agent = await _init_all(voice)
-        set_dependencies(assistant, voice_engine, cloud, research_agent, digest_agent)
-
+        
         h = host or cfg.javris_host
         p = port or cfg.javris_port
 
         console.print(f"\n[bold green]Javris running at[/bold green] [cyan]http://{h}:{p}[/cyan]")
-        console.print(f"[dim]Owner: {assistant.personality.owner_name} | Model: {cfg.javris_claude_model}[/dim]")
+        console.print(f"[dim]Mode: API Server | Primary Model: {cfg.javris_primary_model}[/dim]")
         console.print("[dim]Press Ctrl+C to stop[/dim]\n")
 
-        config = uvicorn.Config(app=app, host=h, port=p, log_level="warning", timeout_keep_alive=300)
+        config = uvicorn.Config(app=app, host=h, port=p, log_level="info", timeout_keep_alive=600)
         server = uvicorn.Server(config)
         try:
             await server.serve()
         finally:
-            await assistant.close()
+            from server.app import _assistant as _srv_assistant
+            if _srv_assistant:
+                await _srv_assistant.close()
 
     asyncio.run(_serve())
 
@@ -209,9 +210,9 @@ def voice():
                     await asyncio.gather(*speak_tasks, return_exceptions=True)
 
             except Exception as e:
-                logger.error(f"Voice handle error: {e}")
+                logger.error(f"Voice handle error: {e}", exc_info=True)
                 await voice_engine.speak("Sorry, I ran into a problem. Please try again.")
-                full_reply = full_reply or "Error"
+                full_reply = full_reply or f"Error: {e}"
 
             console.print(f"[green]Javris:[/green] {full_reply[:300]}")
 
