@@ -221,11 +221,18 @@ async def execute_command(cmd: VoiceCommand, assistant, autonomy=None) -> dict:
         elif action == "get_weather":
             skill = assistant._skill_registry.get("get_weather")
             if skill:
-                loc = cmd.params.get("location", "")
-                data = await skill.run(location=loc or "London")
+                loc = cmd.params.get("location", "").strip()
+                if not loc or loc == "current location":
+                    loc = (
+                        getattr(getattr(assistant, "personality", None), "preferred_weather_location", None)
+                        or "London"
+                    )
+                data = await skill.run(location=loc)
                 curr = data.get("current", {})
+                if not curr:
+                    return {"response": f"Sorry, I couldn't get weather data for {loc}.", "action_taken": "weather", "data": data}
                 reply = (f"{curr.get('description','')}, {curr.get('temp','')} "
-                         f"in {curr.get('location','')}. "
+                         f"in {curr.get('location', loc)}. "
                          f"Feels like {curr.get('feels_like','')}.")
                 return {"response": reply, "action_taken": "weather", "data": data}
 
