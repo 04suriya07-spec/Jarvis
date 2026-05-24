@@ -870,6 +870,74 @@ async def google_auth_start():
     })
 
 
+# ── Notion OAuth ──────────────────────────────────────────────────
+
+@app.get("/auth/notion")
+async def notion_auth_start():
+    """Redirect browser to Notion's OAuth consent screen."""
+    if not cfg.notion_client_id:
+        return JSONResponse({"error": "NOTION_CLIENT_ID not set in .env"}, status_code=503)
+    from urllib.parse import urlencode
+    from fastapi.responses import RedirectResponse
+    params = urlencode({
+        "client_id": cfg.notion_client_id,
+        "response_type": "code",
+        "owner": "user",
+        "redirect_uri": cfg.notion_redirect_uri,
+    })
+    return RedirectResponse(f"https://api.notion.com/v1/oauth/authorize?{params}")
+
+
+@app.get("/auth/notion/callback")
+async def notion_auth_callback(code: str = "", error: str = ""):
+    """Notion redirects here after the user authorises the integration."""
+    if error:
+        return HTMLResponse(f"<h2>Notion auth failed: {error}</h2>")
+    if not code:
+        return HTMLResponse("<h2>No code received from Notion.</h2>")
+
+    import base64, httpx as _httpx
+    credentials = base64.b64encode(
+        f"{cfg.notion_client_id}:{cfg.notion_client_secret}".encode()
+    ).decode()
+
+    async with _httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            "https://api.notion.com/v1/oauth/token",
+            headers={
+                "Authorization": f"Basic {credentials}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": cfg.notion_redirect_uri,
+            },
+        )
+
+    if resp.status_code != 200:
+        return HTMLResponse(f"<h2>Token exchange failed: {resp.text}</h2>")
+
+    token_data = resp.json()
+    from skills.notion import save_notion_token
+    save_notion_token(token_data)
+
+    workspace = token_data.get("workspace_name", "your workspace")
+    owner = token_data.get("owner", {}).get("user", {}).get("name", "")
+    return HTMLResponse(f"""
+    <html><head><style>
+      body{{font-family:sans-serif;background:#0a0a0a;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
+      .box{{background:#111;border:1px solid #00d4ff;border-radius:12px;padding:2rem 3rem;text-align:center}}
+      h2{{color:#00d4ff;margin-top:0}} a{{color:#00d4ff}}
+    </style></head><body><div class="box">
+      <h2>Notion Connected</h2>
+      <p>Workspace: <b>{workspace}</b>{f" &bull; {owner}" if owner else ""}</p>
+      <p>Javris can now read and write your Notion pages.</p>
+      <p><a href="/">Return to Javris</a></p>
+    </div></body></html>
+    """)
+
+
 # ── Modes ─────────────────────────────────────────────────────────
 
 class ModeSwitchRequest(BaseModel):

@@ -33,7 +33,11 @@ class JavrisConfig(BaseSettings):
     google_api_key_3: str = ""      # key pool slot 3
     ollama_base_url: str = "http://localhost:11434"
 
-    javris_primary_model: Literal["claude", "ollama", "openai", "gemini"] = "openai"
+    # ── Fast inference providers ──────────────────────────────
+    groq_api_key: str = ""          # Groq — fastest open-source inference
+    cerebras_api_key: str = ""      # Cerebras — ultra-fast silicon
+
+    javris_primary_model: Literal["claude", "ollama", "openai", "gemini", "groq", "cerebras"] = "groq"
     javris_claude_model: str = "claude-sonnet-4-6"
     javris_ollama_model: str = "phi3:latest"
 
@@ -84,7 +88,10 @@ class JavrisConfig(BaseSettings):
     github_token: str = ""               # GitHub personal access token
 
     # ── Skills — Notion ──────────────────────────────────────
-    notion_api_key: str = ""             # Notion integration token (ntn_...)
+    notion_api_key: str = ""             # Notion internal integration token (ntn_...)
+    notion_client_id: str = ""           # Notion OAuth client ID
+    notion_client_secret: str = ""       # Notion OAuth client secret
+    notion_redirect_uri: str = "http://127.0.0.1:8000/auth/notion/callback"
 
     # ── Skills — Obsidian ────────────────────────────────────
     obsidian_vault_path: str = ""        # Absolute path to Obsidian vault folder
@@ -108,10 +115,15 @@ class JavrisConfig(BaseSettings):
     google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
 
     # ── Server ────────────────────────────────────────────────
-    javris_host: str = "0.0.0.0"
+    javris_host: str = "127.0.0.1"
     javris_port: int = 8000
     javris_secret_key: str = "change_me"
     javris_debug: bool = False
+    javris_api_token: str = ""
+    javris_auth_enabled: bool = False
+    javris_permission_mode: Literal["adaptive", "strict", "open"] = "adaptive"
+    javris_local_only: bool = True
+    javris_autonomy_enabled: bool = False
 
     # ── Notifications ─────────────────────────────────────────
     discord_webhook_url: str = ""

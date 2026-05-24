@@ -6,6 +6,9 @@ API version: 2025-09-03 (latest, databases called "data sources").
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import httpx
 
 from skills.base import BaseSkill
@@ -17,6 +20,28 @@ cfg = get_config()
 
 NOTION_API = "https://api.notion.com/v1"
 NOTION_VERSION = "2025-09-03"
+
+# OAuth access token is stored here after the user completes the flow
+_TOKEN_FILE = Path(__file__).resolve().parent.parent / "data" / "notion_oauth_token.json"
+
+
+def get_notion_token() -> str:
+    """Return the best available token: OAuth access token > internal key."""
+    if _TOKEN_FILE.exists():
+        try:
+            data = json.loads(_TOKEN_FILE.read_text(encoding="utf-8"))
+            token = data.get("access_token", "")
+            if token:
+                return token
+        except Exception:
+            pass
+    return cfg.notion_api_key
+
+
+def save_notion_token(token_data: dict) -> None:
+    _TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _TOKEN_FILE.write_text(json.dumps(token_data, indent=2), encoding="utf-8")
+    logger.info("Notion OAuth token saved.")
 
 
 def _extract_title(obj: dict) -> str:
@@ -113,7 +138,7 @@ class NotionSkill(BaseSkill):
 
     def _headers(self) -> dict:
         return {
-            "Authorization": f"Bearer {cfg.notion_api_key}",
+            "Authorization": f"Bearer {get_notion_token()}",
             "Notion-Version": NOTION_VERSION,
             "Content-Type": "application/json",
         }
@@ -129,8 +154,8 @@ class NotionSkill(BaseSkill):
         properties: dict | None = None,
         filter: dict | None = None,
     ) -> dict | list | str:
-        if not cfg.notion_api_key:
-            return "Notion API key not configured — set NOTION_API_KEY in .env"
+        if not get_notion_token():
+            return "Notion not authorised — visit http://127.0.0.1:8000/auth/notion to connect"
 
         logger.info(f"Notion:{action} page={page_id or '-'} db={database_id or '-'}")
 
