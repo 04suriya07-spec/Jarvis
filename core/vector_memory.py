@@ -78,7 +78,7 @@ class VectorMemory:
         }
 
         if self._available and self._collection is not None:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(
                 None,
                 lambda: self._collection.upsert(
@@ -112,16 +112,25 @@ class VectorMemory:
 
         if self._available and self._collection is not None:
             try:
-                loop = asyncio.get_event_loop()
-                kwargs: dict = {"query_texts": [query], "n_results": min(n_results, max(1, self._collection.count()))}
+                loop = asyncio.get_running_loop()
+                count = self._collection.count()
+                if count == 0:
+                    return []
+                kwargs: dict = {"query_texts": [query], "n_results": min(n_results, count)}
                 if where:
                     kwargs["where"] = where
                 results = await loop.run_in_executor(
                     None, lambda: self._collection.query(**kwargs)
                 )
-                docs = results.get("documents", [[]])[0]
-                metas = results.get("metadatas", [[]])[0]
-                dists = results.get("distances", [[]])[0]
+                # chromadb 1.x returns a QueryResult object; 0.4.x returns a plain dict — handle both
+                if hasattr(results, "documents"):
+                    docs  = results.documents[0] if results.documents else []
+                    metas = results.metadatas[0] if results.metadatas else []
+                    dists = results.distances[0] if results.distances else []
+                else:
+                    docs  = results.get("documents", [[]])[0]
+                    metas = results.get("metadatas",  [[]])[0]
+                    dists = results.get("distances",  [[]])[0]
                 return [
                     {"text": d, "metadata": m, "distance": dist, "score": round(1 - dist, 4)}
                     for d, m, dist in zip(docs, metas, dists)
@@ -149,7 +158,7 @@ class VectorMemory:
     async def delete(self, doc_id: str) -> None:
         """Remove a document by id."""
         if self._available and self._collection is not None:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(
                 None, lambda: self._collection.delete(ids=[doc_id])
             )
