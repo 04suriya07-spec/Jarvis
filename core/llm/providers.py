@@ -47,6 +47,21 @@ class ProviderError(Exception):
         super().__init__(f"[{provider}] {msg}")
 
 
+def _to_openai_tools(anthropic_tools: List[dict]) -> List[dict]:
+    """Convert Anthropic tool format → OpenAI function-calling format."""
+    result = []
+    for t in anthropic_tools:
+        result.append({
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t.get("description", ""),
+                "parameters": t.get("input_schema", {"type": "object", "properties": {}}),
+            },
+        })
+    return result
+
+
 # ── Retry-after header parsing ────────────────────────────────────
 
 def _parse_retry_after(response: httpx.Response) -> float:
@@ -95,35 +110,79 @@ class OpenAIProvider:
         system: str,
         max_tokens: int = 1024,
         stream: bool = False,
+        tools: Optional[List[dict]] = None,
     ) -> dict:
-        return {
+        payload = {
             "model": self.MODEL,
             "messages": [{"role": "system", "content": system}] + messages,
             "temperature": 0.7,
             "max_tokens": max_tokens,
             "stream": stream,
         }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        return payload
 
     async def chat(
         self,
         messages: List[dict],
         system: str,
         max_tokens: int = 1024,
+        tools: Optional[List[dict]] = None,
+        tool_dispatch=None,
     ) -> Tuple[str, int]:
         """Returns (text, tokens). Raises RateLimitError or ProviderError."""
-        payload = self._build_payload(messages, system, max_tokens)
-        async with httpx.AsyncClient(timeout=_FAST_TIMEOUT) as client:
-            r = await client.post(self.URL, json=payload, headers=self._headers)
+        openai_tools = _to_openai_tools(tools) if tools else None
+        history = [{"role": "system", "content": system}] + list(messages)
+        total_tokens = 0
 
-        if r.status_code == 429:
-            raise RateLimitError(self.NAME, _parse_retry_after(r))
-        if r.status_code != 200:
-            raise ProviderError(self.NAME, f"HTTP {r.status_code}: {r.text[:200]}")
+        for _ in range(6):
+            payload = {
+                "model": self.MODEL,
+                "messages": history,
+                "temperature": 0.7,
+                "max_tokens": max_tokens,
+            }
+            if openai_tools:
+                payload["tools"] = openai_tools
+                payload["tool_choice"] = "auto"
 
-        data  = r.json()
-        text  = data["choices"][0]["message"]["content"]
-        tokens = data.get("usage", {}).get("completion_tokens", 0)
-        return text, tokens
+            async with httpx.AsyncClient(timeout=_FAST_TIMEOUT) as client:
+                r = await client.post(self.URL, json=payload, headers=self._headers)
+
+            if r.status_code == 429:
+                raise RateLimitError(self.NAME, _parse_retry_after(r))
+            if r.status_code != 200:
+                raise ProviderError(self.NAME, f"HTTP {r.status_code}: {r.text[:200]}")
+
+            data = r.json()
+            choice = data["choices"][0]
+            msg = choice["message"]
+            total_tokens += data.get("usage", {}).get("completion_tokens", 0)
+
+            if choice.get("finish_reason") == "tool_calls" and tool_dispatch and msg.get("tool_calls"):
+                history.append(msg)
+                tool_results = []
+                for tc in msg["tool_calls"]:
+                    fn = tc["function"]
+                    try:
+                        args = json.loads(fn["arguments"])
+                    except Exception:
+                        args = {}
+                    result = await tool_dispatch(fn["name"], args)
+                    tool_results.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": str(result),
+                    })
+                history.extend(tool_results)
+                continue
+
+            text = msg.get("content") or ""
+            return text, total_tokens
+
+        raise ProviderError(self.NAME, "Tool-use loop exceeded max hops")
 
     async def stream(
         self,
@@ -480,8 +539,15 @@ class ClaudeProvider:
         messages: List[dict],
         system: str,
         max_tokens: int = 1024,
+        tool_dispatch=None,
     ) -> AsyncIterator[str]:
         import anthropic
+        # When tools are configured, fall back to chat() so the tool-use
+        # loop runs correctly. Yield the full response as one chunk.
+        if self._tools and tool_dispatch:
+            text, _ = await self.chat(messages, system, max_tokens, tool_dispatch=tool_dispatch)
+            yield text
+            return
         try:
             async with self._client.messages.stream(
                 model=self._model,
@@ -495,6 +561,204 @@ class ClaudeProvider:
             raise RateLimitError(self.NAME, 60.0) from e
         except anthropic.APIError as e:
             raise ProviderError(self.NAME, str(e)) from e
+
+
+# ─────────────────────────────────────────────────────────────────
+# Groq Provider — fastest open-source inference (llama3, mixtral)
+# ─────────────────────────────────────────────────────────────────
+
+class GroqProvider:
+    NAME  = "groq"
+    MODEL = "llama-3.3-70b-versatile"   # best quality/speed balance on Groq
+    URL   = "https://api.groq.com/openai/v1/chat/completions"
+
+    def __init__(self, api_key: str):
+        self._key = api_key
+        self._headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _payload(self, messages, system, max_tokens, stream=False):
+        return {
+            "model": self.MODEL,
+            "messages": [{"role": "system", "content": system}] + messages,
+            "temperature": 0.7,
+            "max_tokens": max_tokens,
+            "stream": stream,
+        }
+
+    async def chat(self, messages, system, max_tokens=1024, tools=None, tool_dispatch=None):
+        openai_tools = _to_openai_tools(tools) if tools else None
+        history = [{"role": "system", "content": system}] + list(messages)
+        total_tokens = 0
+
+        for _ in range(6):
+            payload = {
+                "model": self.MODEL,
+                "messages": history,
+                "temperature": 0.7,
+                "max_tokens": max_tokens,
+            }
+            if openai_tools:
+                payload["tools"] = openai_tools
+                payload["tool_choice"] = "auto"
+
+            async with httpx.AsyncClient(timeout=_FAST_TIMEOUT) as client:
+                r = await client.post(self.URL, json=payload, headers=self._headers)
+            if r.status_code == 429:
+                raise RateLimitError(self.NAME, _parse_retry_after(r))
+            if r.status_code != 200:
+                raise ProviderError(self.NAME, f"HTTP {r.status_code}: {r.text[:200]}")
+
+            data = r.json()
+            choice = data["choices"][0]
+            msg = choice["message"]
+            total_tokens += data.get("usage", {}).get("completion_tokens", 0)
+
+            if choice.get("finish_reason") == "tool_calls" and tool_dispatch and msg.get("tool_calls"):
+                history.append(msg)
+                tool_results = []
+                for tc in msg["tool_calls"]:
+                    fn = tc["function"]
+                    try:
+                        args = json.loads(fn["arguments"])
+                    except Exception:
+                        args = {}
+                    result = await tool_dispatch(fn["name"], args)
+                    tool_results.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": str(result),
+                    })
+                history.extend(tool_results)
+                continue
+
+            text = msg.get("content") or ""
+            return text, total_tokens
+
+        raise ProviderError(self.NAME, "Tool-use loop exceeded max hops")
+
+    async def stream(self, messages, system, max_tokens=1024):
+        async with httpx.AsyncClient(timeout=_STREAM_TIMEOUT) as client:
+            async with client.stream("POST", self.URL, json=self._payload(messages, system, max_tokens, stream=True), headers=self._headers) as r:
+                if r.status_code == 429:
+                    body = await r.aread()
+                    raise RateLimitError(self.NAME, _parse_retry_after(httpx.Response(429, headers=r.headers, content=body)))
+                if r.status_code != 200:
+                    body = await r.aread()
+                    raise ProviderError(self.NAME, f"HTTP {r.status_code}")
+                async for line in r.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    chunk = line[6:]
+                    if chunk == "[DONE]":
+                        break
+                    try:
+                        delta = json.loads(chunk)["choices"][0]["delta"].get("content", "")
+                        if delta:
+                            yield delta
+                    except Exception:
+                        pass
+
+
+# ─────────────────────────────────────────────────────────────────
+# Cerebras Provider — ultra-fast inference chip
+# ─────────────────────────────────────────────────────────────────
+
+class CerebrasProvider:
+    NAME  = "cerebras"
+    MODEL = "llama-3.3-70b"
+    URL   = "https://api.cerebras.ai/v1/chat/completions"
+
+    def __init__(self, api_key: str):
+        self._key = api_key
+        self._headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _payload(self, messages, system, max_tokens, stream=False):
+        return {
+            "model": self.MODEL,
+            "messages": [{"role": "system", "content": system}] + messages,
+            "temperature": 0.7,
+            "max_tokens": max_tokens,
+            "stream": stream,
+        }
+
+    async def chat(self, messages, system, max_tokens=1024, tools=None, tool_dispatch=None):
+        openai_tools = _to_openai_tools(tools) if tools else None
+        history = [{"role": "system", "content": system}] + list(messages)
+        total_tokens = 0
+
+        for _ in range(6):
+            payload = {
+                "model": self.MODEL,
+                "messages": history,
+                "temperature": 0.7,
+                "max_tokens": max_tokens,
+            }
+            if openai_tools:
+                payload["tools"] = openai_tools
+                payload["tool_choice"] = "auto"
+
+            async with httpx.AsyncClient(timeout=_FAST_TIMEOUT) as client:
+                r = await client.post(self.URL, json=payload, headers=self._headers)
+            if r.status_code == 429:
+                raise RateLimitError(self.NAME, _parse_retry_after(r))
+            if r.status_code != 200:
+                raise ProviderError(self.NAME, f"HTTP {r.status_code}: {r.text[:200]}")
+
+            data = r.json()
+            choice = data["choices"][0]
+            msg = choice["message"]
+            total_tokens += data.get("usage", {}).get("completion_tokens", 0)
+
+            if choice.get("finish_reason") == "tool_calls" and tool_dispatch and msg.get("tool_calls"):
+                history.append(msg)
+                tool_results = []
+                for tc in msg["tool_calls"]:
+                    fn = tc["function"]
+                    try:
+                        args = json.loads(fn["arguments"])
+                    except Exception:
+                        args = {}
+                    result = await tool_dispatch(fn["name"], args)
+                    tool_results.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": str(result),
+                    })
+                history.extend(tool_results)
+                continue
+
+            text = msg.get("content") or ""
+            return text, total_tokens
+
+        raise ProviderError(self.NAME, "Tool-use loop exceeded max hops")
+
+    async def stream(self, messages, system, max_tokens=1024):
+        async with httpx.AsyncClient(timeout=_STREAM_TIMEOUT) as client:
+            async with client.stream("POST", self.URL, json=self._payload(messages, system, max_tokens, stream=True), headers=self._headers) as r:
+                if r.status_code == 429:
+                    body = await r.aread()
+                    raise RateLimitError(self.NAME, _parse_retry_after(httpx.Response(429, headers=r.headers, content=body)))
+                if r.status_code != 200:
+                    body = await r.aread()
+                    raise ProviderError(self.NAME, f"HTTP {r.status_code}")
+                async for line in r.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    chunk = line[6:]
+                    if chunk == "[DONE]":
+                        break
+                    try:
+                        delta = json.loads(chunk)["choices"][0]["delta"].get("content", "")
+                        if delta:
+                            yield delta
+                    except Exception:
+                        pass
 
 
 # ─────────────────────────────────────────────────────────────────

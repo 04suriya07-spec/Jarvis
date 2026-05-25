@@ -1,0 +1,1844 @@
+/* ════════════════════════════════════════════════════════════════
+   CINEMATIC SHELL — "Stark workshop" treatment
+   Aggressive crimson palette · dense concentric instrumentation
+   Mirrored hero clock · peripheral gauges · app rail
+   ════════════════════════════════════════════════════════════════
+   Built on Javris design tokens — only the accent is swapped to
+   crimson red locally. Set body.cyan to revert to brand cyan.
+   ════════════════════════════════════════════════════════════════ */
+/* tokens imported separately */
+
+* { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+input, textarea { user-select: text; }
+
+html, body, #root {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #02030a;
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
+/* ── PALETTE OVERRIDE — crimson "threat" mode ─────────────── */
+:root {
+  --c-hot:        #ff1f3a;
+  --c-hot-soft:   #c01a30;
+  --c-hot-deep:   #4a0410;
+  --c-hot-dim:    rgba(255, 31, 58, 0.5);
+  --c-hot-ghost:  rgba(255, 31, 58, 0.12);
+  --c-hot-mute:   rgba(255, 31, 58, 0.4);
+  --c-hot-glow:   rgba(255, 31, 58, 0.65);
+}
+body.cyan {
+  --c-hot:        #00d4ff;
+  --c-hot-soft:   #00a2c9;
+  --c-hot-deep:   #001a26;
+  --c-hot-dim:    rgba(0, 212, 255, 0.5);
+  --c-hot-ghost:  rgba(0, 212, 255, 0.12);
+  --c-hot-mute:   rgba(0, 212, 255, 0.4);
+  --c-hot-glow:   rgba(0, 212, 255, 0.65);
+}
+
+/* ════════════════════════════════════════════════════════════
+   STAGE — pure black with subtle ambient red
+   ════════════════════════════════════════════════════════════ */
+.cs-stage {
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(900px 700px at 50% 50%, rgba(255,31,58,.05), transparent 60%),
+    radial-gradient(600px 500px at 20% 20%, rgba(255,31,58,.02), transparent 60%),
+    radial-gradient(700px 500px at 80% 90%, rgba(255,31,58,.03), transparent 60%),
+    #02030a;
+}
+.cs-stage::before {
+  content:''; position:absolute; inset:0;
+  background-image:
+    linear-gradient(rgba(255,31,58,.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,31,58,.025) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse at center, #000 30%, transparent 90%);
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 30%, transparent 90%);
+  animation: cs-grid-breath 8s ease-in-out infinite;
+}
+.cs-stage::after {
+  content:''; position:absolute; inset:0;
+  background: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,.7) 100%);
+  pointer-events:none;
+}
+@keyframes cs-grid-breath { 0%,100%{opacity:.5} 50%{opacity:1} }
+
+/* ════════════════════════════════════════════════════════════
+   TOP BAR — app launchers + utility buttons + brand
+   ════════════════════════════════════════════════════════════ */
+.cs-topbar {
+  position: fixed; top: 0; left: 0; right: 0; height: 42px;
+  z-index: 20;
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 18px;
+  background: linear-gradient(180deg, rgba(0,0,0,.92), rgba(0,0,0,.5));
+  border-bottom: 1px solid rgba(255,31,58,.15);
+  backdrop-filter: blur(8px);
+  font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+  color: rgba(255,31,58,.55);
+}
+.cs-topbar .brand-block {
+  display: flex; align-items: center; gap: 10px;
+  padding-right: 14px; border-right: 1px solid rgba(255,31,58,.15);
+}
+.cs-topbar .brand-mark {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: radial-gradient(circle at center, var(--c-hot), var(--c-hot-deep) 70%, transparent 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 900; font-size: 14px; color: #fff;
+  box-shadow: 0 0 12px var(--c-hot-glow), inset 0 0 6px rgba(0,0,0,.4);
+}
+.cs-topbar .brand-text {
+  font-family: var(--font-display);
+  font-weight: 700; font-size: 11px; letter-spacing: 4px;
+  color: var(--c-hot);
+  text-shadow: 0 0 8px var(--c-hot-glow);
+}
+.cs-topbar .brand-sub { font-size: 8px; color: rgba(255,255,255,.35); letter-spacing: 1.5px; }
+
+.cs-launcher-strip {
+  display: flex; align-items: center; gap: 4px;
+}
+.cs-app {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px; border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255,31,58,.12), rgba(0,0,0,.4));
+  border: 1px solid rgba(255,31,58,.25);
+  color: rgba(255,255,255,.75);
+  font-size: 9px; letter-spacing: 1px;
+  cursor: pointer; transition: all .2s;
+}
+.cs-app:hover { border-color: var(--c-hot); color: var(--c-hot); }
+.cs-app .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--c-hot);
+  box-shadow: 0 0 4px var(--c-hot);
+}
+
+.cs-tools { margin-left: auto; display: flex; gap: 6px; }
+.cs-tool {
+  width: 32px; height: 28px; border-radius: 4px;
+  border: 1px solid rgba(255,31,58,.3);
+  background: linear-gradient(180deg, rgba(255,31,58,.15), rgba(0,0,0,.4));
+  color: var(--c-hot);
+  font-size: 11px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.cs-tool:hover { border-color: var(--c-hot); background: rgba(255,31,58,.2); }
+.cs-tool .lbl { display: block; font-size: 7px; letter-spacing: .5px; margin-top: -2px; }
+
+/* ════════════════════════════════════════════════════════════
+   HERO CLOCK — top-left huge mirrored time
+   ════════════════════════════════════════════════════════════ */
+.cs-clock {
+  position: fixed; top: 64px; left: 160px;
+  z-index: 12;
+  pointer-events: none;
+}
+.cs-clock-date {
+  font-family: var(--font-display);
+  font-size: 14px; font-weight: 500;
+  color: rgba(255,255,255,.65);
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+.cs-clock-main {
+  font-family: var(--font-display);
+  font-size: 78px; font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -2px;
+  line-height: 0.85;
+  text-shadow: 0 0 20px var(--c-hot-glow), 0 0 4px var(--c-hot);
+  position: relative;
+  display: inline-block;
+}
+.cs-clock-main .colon { color: var(--c-hot); animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: 0.3; } }
+.cs-clock-meridian {
+  font-size: 34px; color: var(--c-hot);
+  margin-left: 6px; vertical-align: top;
+  text-shadow: 0 0 12px var(--c-hot-glow);
+}
+.cs-clock-mirror {
+  font-family: var(--font-display);
+  font-size: 78px; font-weight: 700;
+  color: rgba(255,255,255,.18);
+  letter-spacing: -2px;
+  line-height: 0.85;
+  transform: scaleY(-1);
+  -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,.5) 0%, transparent 70%);
+          mask-image: linear-gradient(180deg, rgba(0,0,0,.5) 0%, transparent 70%);
+  margin-top: 2px;
+}
+
+/* ════════════════════════════════════════════════════════════
+   BIG DATE BLOCK — top-right
+   ════════════════════════════════════════════════════════════ */
+.cs-bigdate {
+  position: fixed; top: 50px; right: 32px;
+  z-index: 12;
+  text-align: right;
+  pointer-events: none;
+}
+.cs-bigdate-num {
+  font-family: var(--font-display);
+  font-size: 64px; font-weight: 800;
+  color: #fff;
+  line-height: 0.85;
+  letter-spacing: -2px;
+  text-shadow: 0 0 24px var(--c-hot-glow), 0 0 4px var(--c-hot);
+  position: relative;
+}
+.cs-bigdate-num::after {
+  content: ''; position: absolute;
+  left: 0; right: 0; bottom: -6px; height: 5px;
+  background: var(--c-hot);
+  box-shadow: 0 0 12px var(--c-hot);
+}
+.cs-bigdate-month {
+  font-family: var(--font-display);
+  font-size: 12px; font-weight: 700;
+  color: #fff;
+  letter-spacing: 5px;
+  margin-top: 12px;
+  text-transform: uppercase;
+}
+.cs-bigdate-month .accent { color: var(--c-hot); }
+.cs-bigdate-day {
+  font-family: var(--font-display);
+  font-size: 10px; font-weight: 500;
+  color: rgba(255,255,255,.6);
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+/* ════════════════════════════════════════════════════════════
+   LEFT APP RAIL — vertical icon column
+   ════════════════════════════════════════════════════════════ */
+.cs-rail {
+  position: fixed;
+  left: 18px; top: 70px;
+  z-index: 13;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.cs-rail-item {
+  width: 130px; height: 34px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 12px;
+  background: linear-gradient(90deg, rgba(255,31,58,.12), transparent);
+  border: 1px solid rgba(255,31,58,.22);
+  border-left: 3px solid var(--c-hot);
+  border-radius: 0 17px 17px 0;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 1.5px;
+  color: rgba(255,255,255,.8);
+  transition: all .2s var(--ease-out);
+}
+.cs-rail-item:hover {
+  background: linear-gradient(90deg, var(--c-hot-ghost), transparent);
+  border-left-color: #fff;
+  color: #fff;
+  transform: translateX(4px);
+}
+.cs-rail-icon {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--c-hot); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: #fff;
+  box-shadow: 0 0 6px var(--c-hot-glow);
+}
+
+/* ════════════════════════════════════════════════════════════
+   CENTER HUD — concentric instrumentation
+   ════════════════════════════════════════════════════════════ */
+.cs-center {
+  position: fixed; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 640px; height: 640px;
+  z-index: 10;
+  pointer-events: none;
+}
+.cs-center .ring {
+  position: absolute; inset: 0;
+  pointer-events: none;
+}
+.cs-rot-cw   { animation: cs-rot-cw  40s linear infinite; transform-origin: center; }
+.cs-rot-ccw  { animation: cs-rot-ccw 60s linear infinite; transform-origin: center; }
+.cs-rot-fast { animation: cs-rot-cw  18s linear infinite; transform-origin: center; }
+@keyframes cs-rot-cw  { to { transform: rotate(360deg);  } }
+@keyframes cs-rot-ccw { to { transform: rotate(-360deg); } }
+
+/* the hot core — intense radial burst */
+.cs-center .core {
+  position: absolute; inset: 38%;
+  border-radius: 50%;
+  background:
+    radial-gradient(closest-side,
+      rgba(255,255,255,.95) 0%,
+      rgba(255,140,160,.85) 6%,
+      rgba(255,31,58,.7) 14%,
+      rgba(255,31,58,.4) 30%,
+      rgba(120,8,20,.25) 55%,
+      transparent 80%);
+  filter: blur(1px);
+  animation: cs-core-pulse 2.6s ease-in-out infinite;
+}
+body.cyan .cs-center .core {
+  background:
+    radial-gradient(closest-side,
+      rgba(255,255,255,.9) 0%,
+      rgba(140,230,255,.85) 6%,
+      rgba(0,212,255,.7) 14%,
+      rgba(0,212,255,.4) 30%,
+      rgba(0,80,120,.25) 55%,
+      transparent 80%);
+}
+@keyframes cs-core-pulse {
+  0%,100% { opacity: .85; transform: scale(1); }
+  50%     { opacity: 1;   transform: scale(1.06); }
+}
+
+/* a second outer aura behind the core */
+.cs-center .aura {
+  position: absolute; inset: 22%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--c-hot-glow), transparent 60%);
+  filter: blur(28px);
+  animation: cs-core-pulse 4s ease-in-out infinite reverse;
+}
+
+/* center voice waveform */
+.cs-waveform {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: auto;
+}
+.cs-wf-bars {
+  display: flex; align-items: center; gap: 3px;
+  height: 90px;
+}
+.cs-wf-bar {
+  width: 4px; border-radius: 2px;
+  background: linear-gradient(180deg, #fff, var(--c-hot) 50%, var(--c-hot-deep));
+  box-shadow: 0 0 10px var(--c-hot-glow);
+  transition: height 90ms cubic-bezier(.16,1,.3,1);
+}
+
+/* mic button at bottom of rings */
+.cs-mic {
+  position: absolute; bottom: 8%; left: 50%;
+  transform: translateX(-50%);
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, rgba(255,31,58,.18), rgba(0,0,0,.4));
+  border: 2px solid var(--c-hot);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  font-size: 18px;
+  box-shadow:
+    0 0 24px var(--c-hot-glow),
+    inset 0 0 30px rgba(255,31,58,.12);
+  pointer-events: auto;
+  transition: transform .35s var(--ease-out), box-shadow .35s, background .35s;
+  font-family: var(--font-display);
+  color: #fff; font-weight: 800;
+  z-index: 5;
+}
+.cs-mic:hover {
+  transform: translateX(-50%) scale(1.04);
+  box-shadow: 0 0 40px var(--c-hot-glow), inset 0 0 30px rgba(255,31,58,.18);
+}
+.cs-mic.listening { animation: cs-mic-listen 1.1s infinite; }
+.cs-mic.speaking  { box-shadow: 0 0 60px var(--c-hot-glow), 0 0 4px #fff; }
+@keyframes cs-mic-listen {
+  0%,100% { box-shadow: 0 0 24px var(--c-hot-mute); }
+  50%     { box-shadow: 0 0 60px var(--c-hot-glow), 0 0 100px rgba(255,31,58,.3); }
+}
+
+.cs-state-label {
+  position: absolute; bottom: 1%; left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-size: 10px; letter-spacing: 4px; text-transform: uppercase;
+  color: var(--c-hot);
+  text-shadow: 0 0 8px var(--c-hot-glow);
+  white-space: nowrap;
+}
+
+/* Ring labels — 4-letter codes around the outer ring */
+.cs-ring-label {
+  position: absolute;
+  font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 1.5px;
+  color: rgba(255,255,255,.6);
+  background: linear-gradient(90deg, rgba(255,31,58,.2), rgba(0,0,0,.6));
+  border: 1px solid rgba(255,31,58,.4);
+  border-radius: 3px;
+  padding: 3px 7px;
+  text-transform: uppercase;
+}
+
+/* ════════════════════════════════════════════════════════════
+   WEATHER STACK — right side mid
+   ════════════════════════════════════════════════════════════ */
+.cs-weather {
+  position: fixed; right: 32px; top: 220px;
+  width: 170px;
+  z-index: 11;
+  text-align: right;
+  pointer-events: none;
+  font-family: var(--font-mono);
+}
+.cs-weather .label {
+  font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--c-hot); margin-bottom: 4px;
+}
+.cs-weather .temp {
+  font-family: var(--font-display); font-size: 38px; font-weight: 700;
+  color: #fff; line-height: 1;
+  text-shadow: 0 0 12px var(--c-hot-glow);
+}
+.cs-weather .row {
+  display: flex; justify-content: space-between;
+  font-size: 10px; padding: 2px 0;
+  border-bottom: 1px solid rgba(255,31,58,.1);
+  letter-spacing: .5px;
+}
+.cs-weather .row .k { color: rgba(255,255,255,.45); }
+.cs-weather .row .v { color: rgba(255,255,255,.85); }
+.cs-weather .now {
+  margin-top: 8px;
+  background: rgba(255,31,58,.15);
+  border: 1px solid var(--c-hot-mute);
+  padding: 4px 8px; border-radius: 4px;
+  font-size: 9px; color: var(--c-hot);
+  letter-spacing: 1px; text-transform: uppercase;
+}
+
+/* ════════════════════════════════════════════════════════════
+   RPM GAUGES — bottom right (placed left of power dial)
+   ════════════════════════════════════════════════════════════ */
+.cs-rpm-stack {
+  position: fixed; right: 140px; bottom: 28px;
+  z-index: 12;
+  display: flex; gap: 14px;
+  pointer-events: none;
+}
+.cs-rpm {
+  position: relative;
+  width: 132px; height: 132px;
+  background: radial-gradient(circle at center, rgba(255,31,58,.06), transparent 65%);
+}
+.cs-rpm .face {
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, rgba(0,0,0,.7), rgba(0,0,0,.95));
+  border: 2px solid var(--c-hot-mute);
+  box-shadow:
+    0 0 20px rgba(255,31,58,.25),
+    inset 0 0 30px rgba(255,31,58,.18);
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+}
+.cs-rpm .label {
+  position: absolute;
+  top: 50%; right: -8px;
+  transform: translateY(-50%);
+  background: var(--c-hot);
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 11px;
+  padding: 4px 9px;
+  letter-spacing: 1.5px;
+  border-radius: 14px;
+  box-shadow: 0 0 12px var(--c-hot-glow);
+  z-index: 3;
+}
+.cs-rpm .value {
+  position: absolute;
+  bottom: -22px; left: 0; right: 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: rgba(255,255,255,.65);
+  letter-spacing: 1px;
+}
+
+/* ════════════════════════════════════════════════════════════
+   UNIFIED LEFT COLUMN — now-playing → activity → wifi → tasks
+   ════════════════════════════════════════════════════════════ */
+.cs-left-col {
+  position: fixed;
+  left: 26px; top: 340px; bottom: 90px;
+  width: 200px;
+  z-index: 12;
+  display: flex; flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.cs-left-col > * { pointer-events: auto; flex-shrink: 0; }
+.cs-left-col .cs-now-playing,
+.cs-left-col .cs-activity,
+.cs-left-col .cs-wifi-block,
+.cs-left-col .cs-procs-block {
+  position: static;
+  left: auto; right: auto; top: auto; bottom: auto;
+  width: 100%;
+}
+.cs-left-col .cs-activity { flex: 1 1 0; min-height: 0; height: auto; }
+.cs-left-col .cs-now-playing { width: 100%; }
+
+/* Compact wifi/network block — rectangular, replaces circular pulse */
+.cs-wifi-block {
+  background: linear-gradient(180deg, rgba(20,4,8,.5), rgba(0,0,0,.3));
+  border: 1px solid rgba(255,31,58,.18);
+  border-left: 2px solid var(--c-hot);
+  border-radius: 0 8px 8px 0;
+  padding: 10px 12px;
+  font-family: var(--font-display);
+}
+.cs-wifi-block .head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--c-hot); text-shadow: 0 0 4px var(--c-hot-glow);
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255,31,58,.2);
+}
+.cs-wifi-block .ssid { color: rgba(255,255,255,.45); font-size: 8px; letter-spacing: 1px; }
+.cs-wifi-block .pct {
+  font-family: var(--font-display);
+  font-size: 22px; font-weight: 700;
+  color: #fff;
+  text-shadow: 0 0 10px var(--c-hot-glow);
+  line-height: 1;
+}
+.cs-wifi-block .row {
+  display: flex; justify-content: space-between;
+  font-size: 9px; letter-spacing: 1px;
+  padding: 2px 0;
+}
+.cs-wifi-block .row .k { color: rgba(255,255,255,.5); }
+.cs-wifi-block .row .v { font-family: var(--font-mono); color: var(--c-hot); }
+.cs-wifi-block .bars {
+  display: flex; align-items: flex-end; gap: 2px;
+  height: 14px; margin: 4px 0 6px;
+}
+.cs-wifi-block .bars div {
+  width: 4px;
+  background: var(--c-hot);
+  box-shadow: 0 0 4px var(--c-hot-glow);
+}
+
+/* Processes mini-list — sits under wifi */
+.cs-procs-block {
+  background: linear-gradient(180deg, rgba(20,4,8,.4), rgba(0,0,0,.3));
+  border: 1px solid rgba(255,31,58,.15);
+  border-left: 2px solid var(--c-hot);
+  border-radius: 0 8px 8px 0;
+  padding: 8px 12px;
+  font-family: var(--font-display);
+}
+.cs-procs-block .head {
+  font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--c-hot); text-shadow: 0 0 4px var(--c-hot-glow);
+  margin-bottom: 6px;
+  display: flex; justify-content: space-between;
+}
+.cs-procs-block .head .count { color: rgba(255,255,255,.5); }
+.cs-procs-block .proc-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 9px; letter-spacing: .5px;
+  border-bottom: 1px dotted rgba(255,31,58,.08);
+}
+.cs-procs-block .proc-row:last-child { border-bottom: 0; }
+.cs-procs-block .proc-row .n { color: rgba(255,255,255,.7); }
+.cs-procs-block .proc-row .c { font-family: var(--font-mono); color: var(--c-hot); }
+.cs-procs-block .proc-row .m { font-family: var(--font-mono); color: rgba(255,255,255,.45); }
+
+/* ════════════════════════════════════════════════════════════
+   RIGHT SPECTRUM — vertical equalizer between BigDate and column
+   ════════════════════════════════════════════════════════════ */
+.cs-spectrum {
+  position: fixed; right: 244px; top: 56px;
+  width: 140px; height: 110px;
+  z-index: 12;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(20,4,8,.4), rgba(0,0,0,.3));
+  border: 1px solid rgba(255,31,58,.15);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.cs-spectrum .head {
+  font-family: var(--font-display);
+  font-size: 8px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--c-hot); text-shadow: 0 0 4px var(--c-hot-glow);
+  margin-bottom: 4px;
+  display: flex; justify-content: space-between;
+}
+.cs-spectrum .head .freq { color: rgba(255,255,255,.45); font-family: var(--font-mono); }
+.cs-spectrum .bars {
+  display: flex; align-items: flex-end; gap: 2px;
+  height: 70px;
+}
+.cs-spectrum .bars div {
+  flex: 1;
+  background: linear-gradient(180deg, #fff, var(--c-hot) 50%, var(--c-hot-deep));
+  box-shadow: 0 0 4px var(--c-hot-glow);
+  border-radius: 1px;
+  transition: height 100ms var(--ease-out);
+}
+
+/* ════════════════════════════════════════════════════════════
+   ORBITAL TEXT INSIDE THE CIRCLE
+   ════════════════════════════════════════════════════════════ */
+.cs-orbit-text {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  animation: cs-rot-cw 30s linear infinite;
+}
+.cs-orbit-text-2 {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  animation: cs-rot-ccw 50s linear infinite;
+}
+.cs-orbit-text text,
+.cs-orbit-text-2 text {
+  fill: rgba(255,31,58,.6);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+}
+
+/* Orbiting beacon dots — extra inside-circle detail */
+.cs-orbit-beacon {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--c-hot);
+  box-shadow: 0 0 6px var(--c-hot-glow), 0 0 2px #fff;
+  z-index: 4;
+  pointer-events: none;
+}
+
+/* ════════════════════════════════════════════════════════════
+   REPOSITIONED — wifi-pulse / mini-meters / ac-bar / media
+   Move them to dock-aligned bottom band so they don't collide
+   ════════════════════════════════════════════════════════════ */
+.cs-wifi-pulse { display: none !important; }   /* superseded by .cs-wifi-block */
+
+/* ════════════════════════════════════════════════════════════
+   UNIFIED RIGHT COLUMN — all right-side widgets stack here
+   ════════════════════════════════════════════════════════════ */
+.cs-right-col {
+  position: fixed;
+  right: 26px; top: 180px; bottom: 160px;
+  width: 220px;
+  z-index: 12;
+  display: flex; flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.cs-right-col > * { pointer-events: auto; flex-shrink: 0; }
+.cs-right-col .cs-right-stats {
+  flex: 1 1 0; min-height: 0; overflow: hidden;
+}
+.cs-right-col .cs-weather,
+.cs-right-col .cs-small-clock,
+.cs-right-col .cs-right-stats,
+.cs-right-col .cs-forecast {
+  position: static;
+  right: auto; top: auto; left: auto; bottom: auto;
+  width: 100%;
+  flex-shrink: 0;
+}
+.cs-right-col .cs-weather {
+  text-align: left;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, rgba(20,4,8,.45), rgba(0,0,0,.3));
+  border: 1px solid rgba(255,31,58,.18);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+}
+.cs-right-col .cs-weather .label { font-size: 9px; margin-bottom: 4px; }
+.cs-right-col .cs-weather .temp { font-size: 28px; }
+.cs-right-col .cs-weather .row { font-size: 9px; padding: 1px 0; }
+.cs-right-col .cs-weather .now { margin-top: 6px; padding: 3px 8px; font-size: 8px; }
+
+.cs-right-col .cs-forecast {
+  padding: 6px 12px;
+  background: linear-gradient(180deg, rgba(20,4,8,.4), rgba(0,0,0,.3));
+  border: 1px solid rgba(255,31,58,.15);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+}
+.cs-right-col .cs-forecast .day { padding: 3px 0; }
+.cs-right-col .cs-forecast .day .head { font-size: 9px; }
+.cs-right-col .cs-forecast .day .temp { font-size: 11px; margin-top: 1px; }
+.cs-right-col .cs-forecast .day .cond { font-size: 8px; }
+
+.cs-right-col .cs-right-stats {
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  padding: 8px 12px;
+}
+.cs-right-col .cs-right-stats .head { margin-bottom: 6px; font-size: 9px; }
+.cs-right-col .cs-right-stats .stat-row { padding: 2px 0; font-size: 9px; }
+.cs-right-col .cs-right-stats .bar { margin: 2px 0 4px; }
+
+.cs-right-col .cs-small-clock {
+  width: 100%;
+  height: 96px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(180deg, rgba(20,4,8,.4), rgba(0,0,0,.3));
+  border: 1px solid rgba(255,31,58,.15);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  position: relative;
+}
+
+/* ════════════════════════════════════════════════════════════
+   WEATHER FORECAST — extension of weather widget
+   ════════════════════════════════════════════════════════════ */
+.cs-forecast {
+  position: fixed; right: 32px; top: 480px;
+  width: 200px;
+  z-index: 11;
+  pointer-events: none;
+  font-family: var(--font-display);
+}
+.cs-forecast .day {
+  padding: 5px 0;
+  border-bottom: 1px dotted rgba(255,31,58,.1);
+}
+.cs-forecast .day:last-child { border-bottom: 0; }
+.cs-forecast .day .head {
+  display: flex; justify-content: space-between;
+  font-size: 10px; letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--c-hot);
+  text-shadow: 0 0 4px var(--c-hot-glow);
+}
+.cs-forecast .day .temp {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: rgba(255,255,255,.85);
+  margin-top: 2px;
+}
+.cs-forecast .day .cond {
+  font-size: 9px;
+  color: rgba(255,255,255,.5);
+  letter-spacing: 1px;
+}
+
+/* ════════════════════════════════════════════════════════════
+   BOTTOM-LEFT NOW-PLAYING + ACTIVITY LOG
+   ════════════════════════════════════════════════════════════ */
+.cs-now-playing {
+  position: fixed; left: 28px; top: 410px;
+  width: 168px;
+  z-index: 12;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(20,4,8,.5), rgba(0,0,0,.3));
+  border: 1px solid rgba(255,31,58,.18);
+  border-left: 2px solid var(--c-hot);
+  border-radius: 0 8px 8px 0;
+  padding: 10px 12px;
+  font-family: var(--font-display);
+}
+.cs-now-playing .lbl {
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--c-hot);
+  text-shadow: 0 0 4px var(--c-hot-glow);
+  margin-bottom: 4px;
+}
+.cs-now-playing .track {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255,255,255,.9);
+  letter-spacing: .5px;
+}
+.cs-now-playing .artist {
+  font-size: 10px;
+  color: rgba(255,255,255,.55);
+  letter-spacing: 1px;
+  margin-top: 2px;
+}
+.cs-now-playing .progress {
+  height: 3px; width: 100%;
+  background: rgba(255,31,58,.1);
+  border-radius: 2px;
+  margin: 8px 0 4px;
+  overflow: hidden;
+}
+.cs-now-playing .progress .fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--c-hot-deep), var(--c-hot));
+  box-shadow: 0 0 6px var(--c-hot-glow);
+  animation: cs-progress 180s linear infinite;
+}
+@keyframes cs-progress { from { width: 0; } to { width: 100%; } }
+.cs-now-playing .meta {
+  display: flex; justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: rgba(255,255,255,.4);
+}
+
+/* Activity log — below now-playing */
+.cs-activity {
+  position: fixed; left: 28px; top: 540px;
+  width: 168px; height: 132px;
+  z-index: 12;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(20,4,8,.4), rgba(0,0,0,.3));
+  border: 1px solid rgba(255,31,58,.15);
+  border-left: 2px solid var(--c-hot);
+  border-radius: 0 8px 8px 0;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  overflow: hidden;
+  mask-image: linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent);
+}
+.cs-activity .head {
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--c-hot);
+  text-shadow: 0 0 4px var(--c-hot-glow);
+  margin-bottom: 8px;
+}
+.cs-activity .entry {
+  font-size: 9px;
+  line-height: 1.6;
+  color: rgba(255,255,255,.55);
+  letter-spacing: .5px;
+  padding: 1px 0;
+}
+.cs-activity .entry .t {
+  color: rgba(255,255,255,.3);
+  margin-right: 6px;
+}
+.cs-activity .entry .tag {
+  color: var(--c-hot);
+  margin-right: 4px;
+}
+
+/* ════════════════════════════════════════════════════════════
+   RADAR MINI — right side, between weather and right-stats
+   ════════════════════════════════════════════════════════════ */
+.cs-radar {
+  position: fixed; right: 250px; top: 280px;
+  width: 124px; height: 124px;
+  z-index: 11;
+  pointer-events: none;
+}
+.cs-radar-face {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, rgba(255,31,58,.08), rgba(0,0,0,.9));
+  border: 1px solid var(--c-hot-mute);
+  box-shadow: inset 0 0 14px rgba(255,31,58,.18), 0 0 12px rgba(255,31,58,.15);
+  overflow: hidden;
+}
+/* concentric rings */
+.cs-radar-rings {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(circle at center, transparent 0, transparent 24%, rgba(255,31,58,.18) 25%, transparent 26%),
+    radial-gradient(circle at center, transparent 0, transparent 49%, rgba(255,31,58,.18) 50%, transparent 51%),
+    radial-gradient(circle at center, transparent 0, transparent 74%, rgba(255,31,58,.18) 75%, transparent 76%);
+}
+/* crosshair */
+.cs-radar-cross::before, .cs-radar-cross::after {
+  content: ''; position: absolute;
+  background: rgba(255,31,58,.18);
+}
+.cs-radar-cross::before { left: 50%; top: 0; bottom: 0; width: 1px; }
+.cs-radar-cross::after  { top: 50%; left: 0; right: 0; height: 1px; }
+/* sweeping arm */
+.cs-radar-sweep {
+  position: absolute; inset: 0;
+  background: conic-gradient(from 0deg, transparent 0deg, rgba(255,31,58,.35) 20deg, transparent 80deg);
+  border-radius: 50%;
+  animation: cs-rot-cw 3.5s linear infinite;
+  transform-origin: center;
+}
+.cs-radar-pip {
+  position: absolute;
+  width: 4px; height: 4px; border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 6px var(--c-hot), 0 0 2px #fff;
+  animation: cs-pip-blink 2s infinite;
+}
+@keyframes cs-pip-blink {
+  0%,100% { opacity: 0; }
+  20%,80% { opacity: 1; }
+}
+.cs-radar-label {
+  position: absolute; bottom: -14px; left: 0; right: 0;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 8px; letter-spacing: 2px;
+  color: var(--c-hot);
+  text-transform: uppercase;
+  text-shadow: 0 0 4px var(--c-hot-glow);
+}
+
+/* ════════════════════════════════════════════════════════════
+   INNER CORE DISPLAY — inside the central HUD
+   ════════════════════════════════════════════════════════════ */
+.cs-inner-display {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 110px; height: 110px;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, rgba(0,0,0,.85), rgba(40,4,10,.6));
+  border: 1px solid var(--c-hot);
+  box-shadow: 0 0 20px var(--c-hot-glow), inset 0 0 20px rgba(255,31,58,.2);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 4;
+  pointer-events: none;
+}
+.cs-inner-display .num {
+  font-family: var(--font-display);
+  font-size: 38px; font-weight: 800;
+  color: #fff;
+  text-shadow: 0 0 12px var(--c-hot-glow);
+  line-height: 1;
+}
+.cs-inner-display .lbl {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: var(--c-hot);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+.cs-inner-display .sub {
+  font-family: var(--font-mono);
+  font-size: 7px;
+  color: rgba(255,255,255,.5);
+  letter-spacing: 1px;
+  margin-top: 2px;
+}
+/* a thin ring around the inner display, separately rotating */
+.cs-inner-ring {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 140px; height: 140px;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  pointer-events: none;
+  animation: cs-rot-cw 9s linear infinite;
+}
+/* sub-info beacons around the core */
+.cs-core-beacon {
+  position: absolute;
+  top: 50%; left: 50%;
+  z-index: 5;
+  pointer-events: none;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: var(--c-hot);
+  text-transform: uppercase;
+  background: rgba(0,0,0,.7);
+  border: 1px solid var(--c-hot-mute);
+  border-radius: 2px;
+  padding: 2px 5px;
+  text-shadow: 0 0 4px var(--c-hot-glow);
+  white-space: nowrap;
+}
+
+/* ════════════════════════════════════════════════════════════
+   TOP TELEMETRY BANNER — fills empty band below topbar
+   ════════════════════════════════════════════════════════════ */
+.cs-telemetry {
+  position: fixed;
+  left: 50%; top: 50px;
+  transform: translateX(-50%);
+  display: flex; gap: 14px; align-items: center;
+  z-index: 13;
+  pointer-events: none;
+  padding: 6px 14px;
+  background: linear-gradient(90deg, transparent, rgba(20,4,8,.6), transparent);
+  border-top: 1px solid rgba(255,31,58,.1);
+  border-bottom: 1px solid rgba(255,31,58,.1);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: rgba(255,255,255,.5);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+.cs-telemetry .seg { color: rgba(255,255,255,.4); }
+.cs-telemetry .val { color: var(--c-hot); font-weight: 700; text-shadow: 0 0 4px var(--c-hot-glow); }
+.cs-telemetry .sep {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--c-hot);
+  box-shadow: 0 0 4px var(--c-hot-glow);
+  animation: cs-pulse 1.5s infinite;
+}
+@keyframes cs-pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+/* ════════════════════════════════════════════════════════════
+   RIGHT MID PANEL — fills gap between small clock and RPMs
+   ════════════════════════════════════════════════════════════ */
+.cs-right-stats {
+  position: fixed;
+  right: 28px; top: 400px;
+  width: 200px;
+  z-index: 12;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(20,4,8,.45), rgba(0,0,0,.3));
+  border: 1px solid rgba(255,31,58,.15);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  padding: 10px 12px;
+  font-family: var(--font-display);
+}
+.cs-right-stats .head {
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--c-hot);
+  text-shadow: 0 0 4px var(--c-hot-glow);
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255,31,58,.2);
+  display: flex; justify-content: space-between;
+}
+.cs-right-stats .head .live {
+  color: rgba(255,255,255,.5);
+  font-size: 8px;
+  letter-spacing: 1px;
+}
+.cs-right-stats .head .live::before {
+  content: "●";
+  color: var(--c-hot);
+  margin-right: 4px;
+  animation: cs-pulse 1.5s infinite;
+}
+.cs-right-stats .stat-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px dotted rgba(255,31,58,.08);
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+.cs-right-stats .stat-row:last-child { border-bottom: 0; }
+.cs-right-stats .stat-row .k {
+  color: rgba(255,255,255,.6);
+  text-transform: uppercase;
+}
+.cs-right-stats .stat-row .v {
+  font-family: var(--font-mono);
+  color: var(--c-hot);
+  font-weight: 700;
+}
+.cs-right-stats .bar {
+  width: 100%; height: 3px;
+  background: rgba(255,31,58,.1);
+  border-radius: 2px;
+  margin: 4px 0 8px;
+  overflow: hidden;
+}
+.cs-right-stats .bar .fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--c-hot-deep), var(--c-hot));
+  box-shadow: 0 0 6px var(--c-hot-glow);
+  transition: width .4s var(--ease-out);
+}
+
+/* ════════════════════════════════════════════════════════════
+   DENSE PERIPHERAL CHROME — fills the empty space
+   ════════════════════════════════════════════════════════════ */
+
+/* HUD perimeter buttons — rectangular labels with values */
+.cs-hud-btn {
+  position: absolute;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: linear-gradient(180deg, rgba(40,4,10,.85), rgba(0,0,0,.6));
+  border: 1px solid var(--c-hot-mute);
+  border-radius: 3px;
+  padding: 3px 6px;
+  min-width: 46px;
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 700;
+  color: rgba(255,255,255,.85);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  text-shadow: 0 0 4px rgba(255,31,58,.4);
+  box-shadow: inset 0 0 8px rgba(255,31,58,.15);
+}
+.cs-hud-btn .val {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: var(--c-hot);
+  font-weight: 500;
+  letter-spacing: 0;
+  margin-top: 1px;
+}
+.cs-hud-btn.glow {
+  background: linear-gradient(180deg, var(--c-hot), var(--c-hot-deep));
+  color: #fff;
+  box-shadow: 0 0 10px var(--c-hot-glow);
+  border-color: #fff;
+}
+
+/* Top HUD mode strip */
+.cs-mode-strip {
+  position: fixed; left: 50%; top: 138px;
+  transform: translateX(-50%);
+  display: flex; gap: 6px;
+  z-index: 13;
+}
+.cs-mode-strip .cs-hud-btn { position: static; padding: 5px 12px; }
+
+/* Side data list — left of center */
+.cs-data-list {
+  position: fixed;
+  left: 200px; top: 290px;
+  z-index: 12;
+  background: linear-gradient(180deg, rgba(20,4,8,.5), rgba(0,0,0,.4));
+  border-left: 2px solid var(--c-hot);
+  padding: 8px 12px 8px 10px;
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+.cs-data-list .row {
+  display: flex; justify-content: space-between;
+  gap: 24px;
+  padding: 2px 0;
+  border-bottom: 1px dotted rgba(255,31,58,.12);
+}
+.cs-data-list .row:last-child { border-bottom: 0; }
+.cs-data-list .k { color: rgba(255,255,255,.55); }
+.cs-data-list .k.hot { color: var(--c-hot); text-shadow: 0 0 4px var(--c-hot-glow); }
+.cs-data-list .v { color: rgba(255,255,255,.75); font-family: var(--font-mono); }
+
+/* Vertical battery bar — right of HUD */
+.cs-vbatt {
+  position: fixed; left: 152px; top: 220px;
+  z-index: 12;
+  width: 16px; height: 320px;
+  background: linear-gradient(180deg, rgba(0,0,0,.7), rgba(20,4,8,.4));
+  border: 1px solid var(--c-hot-mute);
+  border-radius: 2px;
+  display: flex; flex-direction: column-reverse;
+  padding: 2px;
+  pointer-events: none;
+}
+.cs-vbatt::before {
+  content: '';
+  position: absolute; top: -8px; left: 3px; right: 3px;
+  height: 4px;
+  background: var(--c-hot-mute);
+}
+.cs-vbatt .fill {
+  width: 100%;
+  background: linear-gradient(180deg, var(--c-hot-glow), var(--c-hot));
+  border-radius: 1px;
+  box-shadow: 0 0 8px var(--c-hot-glow);
+}
+.cs-vbatt-arrows {
+  position: fixed; left: 144px;
+  z-index: 12;
+  display: flex; flex-direction: column;
+  gap: 4px;
+  pointer-events: none;
+}
+.cs-vbatt-arrows > div {
+  width: 22px; height: 18px;
+  background: rgba(0,0,0,.6);
+  border: 1px solid var(--c-hot-mute);
+  border-radius: 3px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--c-hot);
+  font-size: 12px;
+}
+.cs-vbatt-arrows.top { top: 200px; }
+.cs-vbatt-arrows.bot { top: 548px; }
+
+/* Day pill below center HUD */
+.cs-day-pill {
+  position: fixed; left: 50%; top: calc(50% + 290px);
+  transform: translateX(-50%);
+  z-index: 13;
+  padding: 4px 14px;
+  background: linear-gradient(180deg, rgba(40,4,10,.85), rgba(0,0,0,.6));
+  border: 1px solid var(--c-hot-mute);
+  border-radius: 3px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--c-hot);
+  text-transform: uppercase;
+  text-shadow: 0 0 6px var(--c-hot-glow);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.cs-day-pill .num { color: #fff; font-size: 12px; }
+
+/* Big power dial — bottom-right corner */
+.cs-power-dial {
+  position: fixed; right: 28px; bottom: 26px;
+  z-index: 14;
+  width: 92px; height: 92px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, var(--c-hot) 0%, var(--c-hot-soft) 40%, var(--c-hot-deep) 75%, #000 100%);
+  border: 2px solid var(--c-hot);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow:
+    0 0 30px var(--c-hot-glow),
+    inset 0 4px 12px rgba(255,255,255,.15),
+    inset 0 -6px 16px rgba(0,0,0,.5);
+  cursor: pointer;
+  animation: power-breathe 3s ease-in-out infinite;
+}
+@keyframes power-breathe {
+  0%,100% { box-shadow: 0 0 26px var(--c-hot-glow), inset 0 4px 12px rgba(255,255,255,.15), inset 0 -6px 16px rgba(0,0,0,.5); }
+  50%     { box-shadow: 0 0 50px var(--c-hot-glow), 0 0 90px var(--c-hot-mute), inset 0 4px 12px rgba(255,255,255,.2); }
+}
+.cs-power-dial::before {
+  content: '';
+  position: absolute; inset: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 30%, rgba(255,255,255,.35), transparent 60%);
+}
+.cs-power-dial::after {
+  content: '⏻';
+  position: relative; z-index: 2;
+  color: #fff;
+  font-size: 28px;
+  text-shadow: 0 0 12px #fff, 0 0 4px var(--c-hot);
+}
+
+/* Wifi pulse — bottom-left near rail */
+.cs-wifi-pulse {
+  position: fixed; left: 240px; bottom: 110px;
+  z-index: 12;
+  display: flex; align-items: center; gap: 12px;
+  pointer-events: none;
+}
+.cs-wifi-pulse svg { flex-shrink: 0; filter: drop-shadow(0 0 8px var(--c-hot-glow)); }
+.cs-wifi-pulse .info {
+  font-family: var(--font-display);
+  letter-spacing: 1px;
+}
+.cs-wifi-pulse .info .big {
+  font-size: 24px; font-weight: 700;
+  color: var(--c-hot);
+  text-shadow: 0 0 12px var(--c-hot-glow);
+}
+.cs-wifi-pulse .info .ssid {
+  font-size: 10px; color: rgba(255,255,255,.65);
+  letter-spacing: 1.2px;
+}
+
+/* Media player strip — bottom-center */
+.cs-media {
+  position: fixed; bottom: 18px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 13;
+  display: flex; align-items: center; gap: 10px;
+  pointer-events: none;
+  margin-bottom: 56px;
+}
+.cs-media .btn {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: linear-gradient(180deg, rgba(40,4,10,.85), rgba(0,0,0,.5));
+  border: 1px solid var(--c-hot-mute);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--c-hot);
+  font-size: 12px;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.cs-media .btn:hover { background: var(--c-hot-ghost); border-color: var(--c-hot); }
+.cs-media .time {
+  font-family: var(--font-mono);
+  font-size: 9px; color: rgba(255,255,255,.55);
+  letter-spacing: 1px;
+}
+
+/* Mini meter row — alien-head style indicators bottom-left */
+.cs-mini-meters {
+  position: fixed; left: 180px; bottom: 28px;
+  z-index: 13;
+  display: flex; align-items: center; gap: 16px;
+  pointer-events: none;
+}
+.cs-mini-meter {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  color: rgba(255,255,255,.75);
+  letter-spacing: 1px;
+}
+.cs-mini-meter .icon {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #444, #000);
+  border: 1px solid rgba(255,31,58,.4);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--c-hot);
+  font-size: 11px;
+  box-shadow: 0 0 6px var(--c-hot-mute);
+}
+.cs-mini-meter .graph {
+  width: 36px; height: 16px;
+  display: flex; align-items: flex-end; gap: 1px;
+}
+.cs-mini-meter .graph div {
+  width: 2px;
+  background: var(--c-hot);
+  box-shadow: 0 0 2px var(--c-hot);
+}
+.cs-mini-meter .v {
+  font-family: var(--font-mono);
+  font-size: 9px; color: var(--c-hot);
+}
+
+/* AC line bar */
+.cs-ac-bar {
+  position: fixed; left: 180px; bottom: 56px;
+  z-index: 13;
+  display: flex; align-items: center; gap: 8px;
+  pointer-events: none;
+  font-family: var(--font-display);
+  font-size: 9px;
+  color: rgba(255,255,255,.65);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+.cs-ac-bar .pill {
+  background: rgba(0,0,0,.5);
+  border: 1px solid rgba(255,31,58,.3);
+  border-radius: 12px;
+  padding: 3px 10px;
+  color: var(--c-hot);
+  font-family: var(--font-mono);
+  letter-spacing: 1px;
+}
+
+/* Small clock dial — between big date and HUD */
+.cs-small-clock {
+  position: fixed; right: 32px; top: 270px;
+  z-index: 12;
+  width: 100px; height: 100px;
+  pointer-events: none;
+}
+.cs-small-clock svg {
+  filter: drop-shadow(0 0 6px var(--c-hot-mute));
+}
+.cs-small-clock .center {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  font-family: var(--font-display);
+  pointer-events: none;
+}
+.cs-small-clock .center .t {
+  font-size: 18px; font-weight: 700; color: #fff;
+  text-shadow: 0 0 6px var(--c-hot-glow);
+}
+.cs-small-clock .center .m {
+  font-size: 9px; color: var(--c-hot);
+  letter-spacing: 2px; margin-top: 2px;
+}
+
+/* ════════════════════════════════════════════════════════════
+   WIFI / BATTERY GROUP — bottom left (preserved)
+   ════════════════════════════════════════════════════════════ */
+.cs-bottom-bar {
+  position: fixed; left: 18px; bottom: 18px;
+  z-index: 12;
+  display: flex; align-items: flex-end; gap: 14px;
+  pointer-events: none;
+}
+.cs-wifi {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px;
+  background: linear-gradient(90deg, rgba(255,31,58,.1), transparent);
+  border: 1px solid rgba(255,31,58,.25);
+  border-radius: 18px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  color: var(--c-hot);
+  letter-spacing: 1px;
+}
+.cs-wifi .ssid { color: rgba(255,255,255,.8); font-size: 10px; letter-spacing: 1px; }
+.cs-wifi-ring {
+  width: 28px; height: 28px; flex-shrink: 0;
+}
+.cs-stat-pill {
+  background: rgba(0,0,0,.5);
+  border: 1px solid var(--c-hot-mute);
+  border-radius: 14px;
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: rgba(255,255,255,.8);
+  letter-spacing: 1px;
+  display: flex; align-items: center; gap: 6px;
+}
+.cs-stat-pill .k { color: var(--c-hot); font-weight: 700; }
+
+/* ════════════════════════════════════════════════════════════
+   COMMAND DOCK — bottom center
+   ════════════════════════════════════════════════════════════ */
+.cs-dock {
+  position: fixed; left: 50%; bottom: 26px;
+  transform: translateX(-50%);
+  width: min(540px, 50vw);
+  background: rgba(0,0,0,.7);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--c-hot-mute);
+  border-radius: 999px;
+  padding: 8px 14px;
+  display: flex; align-items: center; gap: 10px;
+  z-index: 16;
+  box-shadow:
+    0 30px 60px rgba(0,0,0,.6),
+    0 0 30px rgba(255,31,58,.18);
+}
+.cs-dock-mic {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 1px solid var(--c-hot);
+  background: rgba(255,31,58,.12);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; color: var(--c-hot);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.cs-dock input {
+  flex: 1;
+  background: transparent;
+  border: 0; outline: 0;
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+.cs-dock input::placeholder {
+  color: rgba(255,255,255,.35);
+  letter-spacing: 1.5px;
+  font-size: 12px;
+}
+.cs-dock-send {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: radial-gradient(circle at center, var(--c-hot), var(--c-hot-deep));
+  border: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 14px;
+  flex-shrink: 0;
+  box-shadow: 0 0 12px var(--c-hot-glow);
+}
+
+/* ════════════════════════════════════════════════════════════
+   REPLY OVERLAY — Javris talking
+   ════════════════════════════════════════════════════════════ */
+.cs-reply {
+  position: fixed;
+  left: 50%; bottom: 100px;
+  transform: translateX(-50%);
+  width: min(560px, 50vw);
+  text-align: center;
+  z-index: 18;
+  pointer-events: none;
+  font-family: var(--font-display);
+  font-size: 16px; font-weight: 500;
+  letter-spacing: 1px;
+  color: rgba(255,255,255,.95);
+  text-shadow: 0 0 18px var(--c-hot-glow);
+  line-height: 1.4;
+  opacity: 0;
+  transition: opacity .6s var(--ease-out), transform .6s var(--ease-out);
+}
+.cs-reply.show { opacity: 1; transform: translateX(-50%) translateY(-6px); }
+.cs-reply::before {
+  content: '«';
+  color: var(--c-hot);
+  margin-right: 8px;
+  font-size: 22px;
+  text-shadow: 0 0 10px var(--c-hot-glow);
+}
+.cs-reply::after {
+  content: '»';
+  color: var(--c-hot);
+  margin-left: 8px;
+  font-size: 22px;
+  text-shadow: 0 0 10px var(--c-hot-glow);
+}
+
+/* ════════════════════════════════════════════════════════════
+   PARTICLES — denser depth field
+   ════════════════════════════════════════════════════════════ */
+.cs-particles { position: fixed; inset: 0; pointer-events: none; z-index: 5; overflow: hidden; }
+@keyframes cs-particle-drift {
+  from { transform: translate3d(0, 110vh, 0); }
+  to   { transform: translate3d(0, -10vh, 0); }
+}
+.cs-particle {
+  position: absolute; width: 2px; height: 2px; border-radius: 50%;
+  background: var(--c-hot);
+  box-shadow: 0 0 4px var(--c-hot);
+  animation: cs-particle-drift linear infinite;
+}
+.cs-particle.far {
+  background: var(--c-hot-dim);
+  box-shadow: 0 0 3px var(--c-hot-mute);
+  filter: blur(1px);
+}
+.cs-particle.near {
+  background: #fff;
+  box-shadow: 0 0 6px var(--c-hot);
+  width: 3px; height: 3px;
+}
+
+/* corner brackets */
+.cs-corner {
+  position: fixed;
+  width: 60px; height: 60px;
+  pointer-events: none;
+  border: 1px solid var(--c-hot-mute);
+  z-index: 30;
+}
+.cs-corner.tl { top: 48px; left: 8px; border-right:0; border-bottom:0; }
+.cs-corner.tr { top: 48px; right: 8px; border-left:0; border-bottom:0; }
+.cs-corner.bl { bottom: 8px; left: 8px; border-right:0; border-top:0; }
+.cs-corner.br { bottom: 8px; right: 8px; border-left:0; border-top:0; }
+.cs-corner::before,
+.cs-corner::after {
+  content:''; position:absolute; background: var(--c-hot);
+  box-shadow: 0 0 6px var(--c-hot);
+}
+.cs-corner::before { width:1px; height:18px; }
+.cs-corner::after  { width:18px; height:1px; }
+.cs-corner.tl::before { left:0; top:0; }
+.cs-corner.tl::after  { left:0; top:0; }
+.cs-corner.tr::before { right:0; top:0; }
+.cs-corner.tr::after  { right:0; top:0; }
+.cs-corner.bl::before { left:0; bottom:0; }
+.cs-corner.bl::after  { left:0; bottom:0; }
+.cs-corner.br::before { right:0; bottom:0; }
+.cs-corner.br::after  { right:0; bottom:0; }
+
+/* ════════════════════════════════════════════════════════════
+   FINAL TOUCHES — only the tweaks the user wanted
+   - Bigger top-right tool buttons
+   - Hide the bottom-right power dial
+   ════════════════════════════════════════════════════════════ */
+.cs-tools { gap: 8px !important; }
+.cs-tool {
+  width: 44px !important;
+  height: 38px !important;
+  font-size: 16px !important;
+  border-radius: 6px !important;
+}
+.cs-tool .lbl {
+  font-size: 8px !important;
+  margin-top: -1px !important;
+  letter-spacing: 1px !important;
+}
+.cs-power-dial { display: none !important; }
+.cs-wifi-pulse { display: none !important; }
+
+/* Push RPM stack into the freed bottom-right corner */
+.cs-rpm-stack { right: 32px !important; bottom: 32px !important; }
+
+
+/* ════════════════════════════════════════════════════════════
+   SUPERSIZE FOR FULLSCREEN — fills a 1920×1080 monitor at 100%
+   No transform scaling — just bigger elements & wider spread.
+   ════════════════════════════════════════════════════════════ */
+html, body, #root { overflow: hidden !important; }
+
+/* Central HUD — bigger ring */
+.cs-center { width: 760px !important; height: 760px !important; }
+
+/* Hero clock — larger */
+.cs-clock { top: 80px !important; left: 200px !important; }
+.cs-clock-main { font-size: 110px !important; letter-spacing: -3px !important; }
+.cs-clock-meridian { font-size: 48px !important; }
+.cs-clock-mirror { font-size: 110px !important; letter-spacing: -3px !important; }
+.cs-clock-date { font-size: 18px !important; }
+
+/* Big date — larger */
+.cs-bigdate { top: 64px !important; right: 56px !important; }
+.cs-bigdate-num { font-size: 124px !important; letter-spacing: -4px !important; }
+.cs-bigdate-month { font-size: 18px !important; letter-spacing: 8px !important; margin-top: 18px !important; }
+.cs-bigdate-day { font-size: 13px !important; letter-spacing: 4px !important; }
+
+/* Top toolbar buttons — bigger */
+.cs-tools { gap: 10px !important; }
+.cs-tool {
+  width: 50px !important; height: 42px !important;
+  font-size: 18px !important; border-radius: 8px !important;
+}
+.cs-tool .lbl { font-size: 9px !important; letter-spacing: 1.2px !important; }
+
+/* Topbar — slightly taller */
+.cs-topbar { height: 48px !important; padding: 0 26px !important; font-size: 10px !important; gap: 14px !important; }
+.cs-topbar .brand-mark { width: 34px !important; height: 34px !important; font-size: 16px !important; }
+.cs-topbar .brand-text { font-size: 13px !important; letter-spacing: 4.5px !important; }
+.cs-topbar .brand-sub { font-size: 9px !important; }
+.cs-topbar .cs-app { padding: 7px 14px !important; font-size: 10px !important; }
+.cs-topbar .cs-app .dot { width: 9px !important; height: 9px !important; }
+
+/* Telemetry banner — bigger and full-width */
+.cs-telemetry { top: 56px !important; padding: 8px 22px !important; font-size: 10px !important; gap: 18px !important; }
+
+/* Mode strip pills — bigger */
+.cs-mode-strip { top: 160px !important; gap: 8px !important; }
+.cs-mode-strip .cs-hud-btn { padding: 8px 18px !important; font-size: 11px !important; min-width: 90px !important; }
+
+/* Left app rail — wider tiles */
+.cs-rail { left: 22px !important; top: 80px !important; gap: 12px !important; }
+.cs-rail-item {
+  width: 160px !important; height: 40px !important;
+  padding: 0 14px !important; font-size: 12px !important; letter-spacing: 1.5px !important;
+}
+.cs-rail-icon { width: 22px !important; height: 22px !important; font-size: 11px !important; }
+
+/* Side data list — bigger, sits to right of rail */
+.cs-data-list { left: 220px !important; top: 250px !important; padding: 12px 16px !important; font-size: 11px !important; letter-spacing: 1.4px !important; }
+.cs-data-list .row { padding: 3px 0 !important; gap: 30px !important; }
+
+/* Vertical battery — taller, sits centred on left between rail and bottom */
+.cs-vbatt { left: 180px !important; top: 240px !important; height: 380px !important; width: 18px !important; }
+.cs-vbatt-arrows.top { left: 170px !important; top: 220px !important; }
+.cs-vbatt-arrows.bot { left: 170px !important; top: 626px !important; }
+.cs-vbatt-arrows > div { width: 24px !important; height: 20px !important; font-size: 13px !important; }
+
+/* Right column — wider, fills more right side */
+.cs-right-col { right: 32px !important; top: 200px !important; bottom: 220px !important; width: 252px !important; }
+
+/* Spectrum + system-load strip — slightly taller and wider */
+.cs-spectrum { top: 76px !important; right: 296px !important; width: 220px !important; height: 116px !important; }
+.cs-sys-strip { top: 200px !important; right: 296px !important; width: 220px !important; height: 70px !important; }
+
+/* Net monitor — placed cleanly below right column */
+.cs-net-monitor { right: 32px !important; bottom: 60px !important; width: 252px !important; padding: 8px 14px !important; }
+
+/* Left column — wider */
+.cs-left-col { left: 32px !important; top: 360px !important; bottom: 200px !important; width: 230px !important; gap: 10px !important; }
+
+/* RPM gauges — bigger */
+.cs-rpm { width: 152px !important; height: 152px !important; }
+.cs-rpm .face svg { width: 100% !important; height: 100% !important; }
+.cs-rpm-stack { right: 304px !important; bottom: 56px !important; left: auto !important; gap: 24px !important; }
+
+/* Mini meters + AC bar — bottom-left, above dock */
+.cs-mini-meters { left: 280px !important; bottom: 36px !important; gap: 22px !important; }
+.cs-mini-meter { font-size: 11px !important; }
+.cs-mini-meter .icon { width: 26px !important; height: 26px !important; font-size: 12px !important; }
+.cs-mini-meter .graph { width: 44px !important; height: 18px !important; }
+
+.cs-ac-bar { left: 280px !important; bottom: 76px !important; font-size: 10px !important; gap: 10px !important; }
+.cs-ac-bar .pill { padding: 4px 12px !important; }
+
+/* Media strip above the dock */
+.cs-media { left: 50% !important; bottom: 100px !important; transform: translateX(-50%) !important; margin: 0 !important; gap: 12px !important; }
+.cs-media .btn { width: 34px !important; height: 34px !important; font-size: 14px !important; }
+.cs-media .time { font-size: 10px !important; }
+
+/* Power dial — REMOVED */
+.cs-power-dial { display: none !important; }
+
+/* Old circular wifi pulse — REMOVED (rectangular block in left-col replaces it) */
+.cs-wifi-pulse { display: none !important; }
+
+/* Command dock — bigger pill */
+.cs-dock { width: min(720px, 56vw) !important; padding: 12px 20px !important; }
+.cs-dock input { font-size: 14px !important; }
+.cs-dock-mic, .cs-dock-send { width: 38px !important; height: 38px !important; font-size: 14px !important; }
+
+/* Day pill below center HUD — bigger */
+.cs-day-pill { top: calc(50% + 340px) !important; padding: 6px 18px !important; font-size: 12px !important; }
+.cs-day-pill .num { font-size: 14px !important; }
+
+
+/* ════════════════════════════════════════════════════════════
+   ALIGNMENT PASS — restore original right-side layout
+   - BigDate top-right
+   - Spectrum to the LEFT of BigDate (side-by-side, top row)
+   - SysStrip below Spectrum
+   - Right-col (Weather/Forecast/Stats) far-right corner
+   - NetMonitor below Right-col
+   - RPM gauges flush bottom-right corner
+   - Left column widgets cleanly stacked, no overlap
+   ════════════════════════════════════════════════════════════ */
+
+/* BigDate stays top-right corner */
+.cs-bigdate { position: fixed !important; right: 56px !important; top: 64px !important; left: auto !important; }
+
+/* Spectrum next to BigDate (to its LEFT) */
+.cs-spectrum  { position: fixed !important; right: 196px !important; top: 120px !important;  left: auto !important; width: 220px !important; height: 116px !important; z-index: 12; }
+.cs-sys-strip { display: none !important; }
+
+/* Right column (Weather / Forecast / System stats) — far-right, under BigDate */
+.cs-right-col {
+  position: fixed !important;
+  right: 32px !important; top: 260px !important; left: auto !important;
+  width: 360px !important; bottom: 260px !important;
+  gap: 10px !important;
+  overflow: hidden !important;
+}
+.cs-rpm-stack { right: 56px !important; bottom: 54px !important; left: auto !important; top: auto !important; gap: 20px !important; }
+.cs-right-col > * { min-height: 0 !important; }
+.cs-right-col .cs-right-stats { flex: 1 1 0 !important; min-height: 0 !important; overflow: hidden !important; }
+
+/* Net monitor — hidden (its info already lives in the right-col stats panel) */
+.cs-net-monitor { display: none !important; }
+
+/* RPM gauges — flush bottom-right corner */
+.cs-rpm-stack { right: 56px !important; bottom: 92px !important; left: auto !important; top: auto !important; gap: 20px !important; }
+
+/* LEFT column — no overflow clipping, height fills available space */
+.cs-left-col {
+  position: fixed !important;
+  left: 32px !important; top: 388px !important;
+  bottom: 190px !important; width: 300px !important;
+  display: flex !important; flex-direction: column !important;
+  gap: 8px !important;
+  overflow: visible !important;
+}
+.cs-left-col > * { flex: 0 0 auto !important; }
+
+/* Activity log — compact strip */
+.cs-left-col .cs-activity {
+  display: flex !important; flex-direction: column !important;
+  height: 68px !important; padding: 8px 12px !important;
+  overflow: hidden !important;
+}
+.cs-left-col .cs-activity .head { font-size: 9px !important; margin-bottom: 4px !important; }
+.cs-left-col .cs-activity .entry { font-size: 9px !important; line-height: 1.5 !important; }
+
+.cs-left-col .cs-wifi-block { height: 148px !important; padding: 10px 14px !important; }
+.cs-left-col .cs-wifi-block .head { font-size: 9px !important; margin-bottom: 4px !important; padding-bottom: 4px !important; }
+.cs-left-col .cs-wifi-block .pct { font-size: 20px !important; }
+.cs-left-col .cs-wifi-block .bars { height: 12px !important; margin: 3px 0 4px !important; }
+.cs-left-col .cs-wifi-block .bars div { width: 3px !important; }
+.cs-left-col .cs-wifi-block .row { font-size: 9.5px !important; padding: 1.5px 0 !important; }
+
+.cs-left-col .cs-procs-block { height: 148px !important; padding: 9px 14px !important; overflow: hidden !important; }
+.cs-left-col .cs-procs-block .head { font-size: 9px !important; margin-bottom: 4px !important; }
+.cs-left-col .cs-procs-block .proc-row { font-size: 9.5px !important; padding: 2px 0 !important; }
+.cs-left-col .cs-procs-block .proc-row:nth-child(n+6) { display: none; }
+
+/* AC bar + mini-meters — now flex children inside .cs-left-col, no fixed position */
+.cs-left-col .cs-ac-bar {
+  position: static !important;
+  left: auto !important; right: auto !important;
+  top: auto !important; bottom: auto !important;
+  width: 100% !important; box-sizing: border-box !important;
+  font-size: 10px !important; gap: 10px !important;
+  flex-shrink: 0 !important;
+}
+.cs-left-col .cs-mini-meters {
+  position: static !important;
+  left: auto !important; right: auto !important;
+  top: auto !important; bottom: auto !important;
+  width: 100% !important; box-sizing: border-box !important;
+  gap: 16px !important;
+  flex-shrink: 0 !important;
+  flex-wrap: wrap !important;
+}
+
+/* Vertical battery — moved nearer the central HUD, styled as a real battery */
+.cs-vbatt {
+  position: fixed !important;
+  left: 340px !important; top: 212px !important;
+  width: 34px !important; height: 456px !important;
+  border-radius: 6px !important;
+  border: 2px solid var(--c-hot) !important;
+  background: linear-gradient(180deg, rgba(0,0,0,.7), rgba(20,4,8,.5)) !important;
+  padding: 4px !important;
+  z-index: 13 !important;
+  box-shadow: 0 0 14px rgba(255,31,58,.25), inset 0 0 10px rgba(255,31,58,.15) !important;
+}
+/* battery cap (the little nub at the top) */
+.cs-vbatt::before {
+  content: '' !important;
+  position: absolute !important;
+  top: -8px !important; left: 50% !important; transform: translateX(-50%) !important;
+  width: 16px !important; height: 6px !important;
+  background: var(--c-hot) !important;
+  border-radius: 2px 2px 0 0 !important;
+  box-shadow: 0 0 8px var(--c-hot-glow) !important;
+}
+/* big % label INSIDE the battery, rotated for vertical reading */
+.cs-vbatt::after {
+  content: '68%' !important;
+  position: absolute !important;
+  top: 50% !important; left: 50% !important;
+  transform: translate(-50%, -50%) rotate(-90deg) !important;
+  font-family: var(--font-display) !important;
+  font-size: 16px !important; font-weight: 700 !important;
+  color: #fff !important;
+  letter-spacing: 2px !important;
+  text-shadow: 0 0 8px var(--c-hot-glow), 0 0 2px #000 !important;
+  z-index: 2 !important;
+  pointer-events: none !important;
+  white-space: nowrap !important;
+}
+.cs-vbatt .fill {
+  background: linear-gradient(180deg, var(--c-hot), var(--c-hot-soft)) !important;
+  box-shadow: 0 0 12px var(--c-hot-glow), inset 0 0 6px rgba(255,255,255,.15) !important;
+  border-radius: 3px !important;
+}
+/* hide the up/down chevron buttons — no longer relevant for a real battery */
+.cs-data-list { display: none !important; }
+.cs-vbatt-arrows.top, .cs-vbatt-arrows.bot { display: none !important; }
+
+/* Mini meters + AC bar — positioned in left column block above (see rules ~line 1759) */
+
+/* Media strip floats above the dock */
+.cs-media {
+  left: 268px !important; top: 220px !important;
+  bottom: auto !important; right: auto !important;
+  transform: none !important; margin: 0 !important;
+  width: 56px !important; height: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: linear-gradient(180deg, rgba(20,4,8,.55), rgba(0,0,0,.4)) !important;
+  border: 1px solid var(--c-hot-mute) !important;
+  border-radius: 10px !important;
+  padding: 8px 4px !important;
+  gap: 5px !important;
+  z-index: 13 !important;
+}
+.cs-media .btn { width: 26px !important; height: 26px !important; font-size: 11px !important; }
+.cs-media .time { font-size: 9px !important; }

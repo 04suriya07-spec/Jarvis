@@ -1,0 +1,1332 @@
+<script>
+'use strict';
+// ════════════════════════════════════════════════════════════════
+//  JAVRIS OS — WORKSPACE ENGINE
+// ════════════════════════════════════════════════════════════════
+
+/* ── Panel registry ── */
+const PANEL_DEFS = {
+  chat:          {title:'Chat',          icon:'💬', w:480, h:560},
+  computer:      {title:'Computer',      icon:'🖥',  w:680, h:520},
+  tasks:         {title:'Tasks',         icon:'✅', w:360, h:480},
+  intelligence:  {title:'Intelligence',  icon:'🧠', w:400, h:500},
+  notifications: {title:'Notifications', icon:'🔔', w:340, h:440},
+  weather:       {title:'Weather',       icon:'🌤', w:300, h:380},
+  news:          {title:'News',          icon:'📰', w:360, h:480},
+  research:      {title:'Research',      icon:'🔬', w:500, h:560},
+  personality:   {title:'Config',        icon:'⚙️', w:420, h:580},
+  tools:         {title:'Tool Calls',    icon:'🔧', w:380, h:320},
+  trace:         {title:'Trace',         icon:'⚡', w:400, h:400},
+  approvals:     {title:'Approvals',     icon:'🛡', w:380, h:400},
+  memory:        {title:'Memory',        icon:'🧠', w:420, h:480},
+};
+
+const panels = {};
+let topZ = 100;
+let notifCount = 0;
+
+/* ── Panel system ── */
+function openPanel(id) {
+  if (panels[id]) {
+    const p = panels[id];
+    if (p.minimized) { p.minimized = false; p.el.classList.remove('minimized'); }
+    focusPanel(id);
+    return;
+  }
+  const def = PANEL_DEFS[id];
+  if (!def) return;
+  document.getElementById('workspace-welcome').classList.add('hidden');
+  const offset = Object.keys(panels).length * 28;
+  const ws = document.getElementById('workspace');
+  const maxX = ws.clientWidth - def.w;
+  const maxY = ws.clientHeight - def.h;
+  const x = Math.min(60 + offset, maxX);
+  const y = Math.min(50 + offset, maxY);
+  const el = document.createElement('div');
+  el.className = 'panel';
+  el.id = `panel-${id}`;
+  el.style.cssText = `left:${x}px;top:${y}px;width:${def.w}px;height:${def.h}px;z-index:${++topZ}`;
+  el.innerHTML = `
+    <div class="panel-head" data-panel="${id}">
+      <span class="ph-icon">${def.icon}</span>
+      <span class="ph-title">${def.title}</span>
+      <div class="ph-controls">
+        <button class="phc-btn phc-min" onclick="minimizePanel('${id}')" title="Minimize">−</button>
+        <button class="phc-btn phc-max" onclick="maximizePanel('${id}')" title="Maximize">□</button>
+        <button class="phc-btn phc-cls" onclick="closePanel('${id}')" title="Close">×</button>
+      </div>
+    </div>
+    <div class="panel-body" id="pbody-${id}"></div>
+    <div class="resize-handle" data-panel="${id}"></div>
+  `;
+  ws.appendChild(el);
+  panels[id] = {el, minimized: false, focused: true};
+  makeDraggable(el, el.querySelector('.panel-head'));
+  makeResizable(el, el.querySelector('.resize-handle'));
+  el.addEventListener('mousedown', () => focusPanel(id));
+  loadPanelContent(id);
+  focusPanel(id);
+  updateTaskbar();
+  updateLauncher(id, true);
+}
+
+function closePanel(id) {
+  const p = panels[id]; if (!p) return;
+  p.el.remove(); delete panels[id];
+  updateTaskbar(); updateLauncher(id, false);
+  if (Object.keys(panels).length === 0)
+    document.getElementById('workspace-welcome').classList.remove('hidden');
+}
+function minimizePanel(id) {
+  const p = panels[id]; if (!p) return;
+  p.minimized = true; p.el.classList.add('minimized'); updateTaskbar();
+}
+function maximizePanel(id) {
+  const p = panels[id]; if (!p) return;
+  const ws = document.getElementById('workspace');
+  p.el.style.cssText += `;left:0;top:0;width:${ws.clientWidth}px;height:${ws.clientHeight}px`;
+  focusPanel(id);
+}
+function focusPanel(id) {
+  const p = panels[id]; if (!p) return;
+  Object.values(panels).forEach(pp => pp.el.classList.remove('focused'));
+  p.el.style.zIndex = ++topZ; p.el.classList.add('focused');
+}
+function updateTaskbar() {
+  const tb = document.getElementById('taskbar');
+  tb.innerHTML = Object.entries(panels).map(([id, p]) => `
+    <div class="taskbar-item ${p.minimized?'':'active'}" onclick="restorePanel('${id}')">
+      <div class="ti-dot"></div>
+      <span>${PANEL_DEFS[id]?.icon||''} ${PANEL_DEFS[id]?.title||id}</span>
+    </div>`).join('');
+}
+function restorePanel(id) {
+  const p = panels[id]; if (!p) return;
+  if (p.minimized) { p.minimized = false; p.el.classList.remove('minimized'); }
+  focusPanel(id);
+}
+function updateLauncher(id, open) {
+  const btn = document.getElementById(`pl-${id}`);
+  if (btn) btn.classList.toggle('open', open);
+}
+
+/* ── Drag ── */
+function makeDraggable(panel, handle) {
+  let dx=0,dy=0,dragging=false;
+  handle.addEventListener('mousedown', e => {
+    if (e.target.classList.contains('phc-btn')) return;
+    dragging=true; dx=e.clientX-panel.offsetLeft; dy=e.clientY-panel.offsetTop; e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const ws=document.getElementById('workspace');
+    panel.style.left=Math.max(0,Math.min(e.clientX-dx,ws.clientWidth-panel.offsetWidth))+'px';
+    panel.style.top=Math.max(0,Math.min(e.clientY-dy,ws.clientHeight-panel.offsetHeight))+'px';
+  });
+  document.addEventListener('mouseup',()=>{dragging=false;});
+}
+
+/* ── Resize ── */
+function makeResizable(panel, handle) {
+  let resizing=false,sx,sy,sw,sh;
+  handle.addEventListener('mousedown', e=>{
+    resizing=true; sx=e.clientX; sy=e.clientY; sw=panel.offsetWidth; sh=panel.offsetHeight;
+    e.preventDefault(); e.stopPropagation();
+  });
+  document.addEventListener('mousemove', e=>{
+    if(!resizing) return;
+    panel.style.width=Math.max(280,sw+(e.clientX-sx))+'px';
+    panel.style.height=Math.max(180,sh+(e.clientY-sy))+'px';
+  });
+  document.addEventListener('mouseup',()=>{resizing=false;});
+}
+
+/* ── Tile ── */
+function tileAllPanels() {
+  const ids=Object.keys(panels).filter(id=>!panels[id].minimized);
+  if(!ids.length) return;
+  const ws=document.getElementById('workspace');
+  const cols=Math.ceil(Math.sqrt(ids.length));
+  const rows=Math.ceil(ids.length/cols);
+  const pw=ws.clientWidth/cols, ph=ws.clientHeight/rows;
+  ids.forEach((id,i)=>{
+    const col=i%cols,row=Math.floor(i/cols);
+    const p=panels[id].el;
+    p.style.left=(col*pw)+'px'; p.style.top=(row*ph)+'px';
+    p.style.width=pw+'px'; p.style.height=ph+'px';
+  });
+}
+
+/* ── Panel content loaders ── */
+function loadPanelContent(id) {
+  const body=document.getElementById(`pbody-${id}`);
+  if(!body) return;
+  const loaders={
+    chat:buildChatPanel, computer:buildComputerPanel, tasks:buildTasksPanel,
+    intelligence:buildIntelPanel, notifications:buildNotifsPanel, weather:buildWeatherPanel,
+    news:buildNewsPanel, research:buildResearchPanel, personality:buildPersonalityPanel,
+    tools:buildToolsPanel, trace:buildTracePanel, approvals:buildApprovalsPanel,
+    memory:buildMemoryPanel,
+  };
+  if(loaders[id]) loaders[id](body);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  CHAT PANEL
+// ════════════════════════════════════════════════════════════════
+let chatWs=null, chatStreamEl=null, chatStreamText='', chatSending=false;
+let lastReplyUsedMemory=false;
+
+function buildChatPanel(body) {
+  body.innerHTML=`
+    <div class="chat-scroll" id="chat-scroll"></div>
+    <div class="chat-input-strip">
+      <textarea class="chat-ta" id="chat-input" placeholder="Ask Javris… (Enter to send)" rows="1"></textarea>
+      <button class="ibtn send" id="chat-send" onclick="chatSend()">➤</button>
+    </div>`;
+  setupChatInput();
+  connectChatWS();
+}
+
+function setupChatInput() {
+  const ta=document.getElementById('chat-input');
+  if(!ta) return;
+  ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();chatSend();}});
+  ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,120)+'px';});
+}
+
+function connectChatWS() {
+  if(chatWs) return;
+  const proto=location.protocol==='https:'?'wss:':'ws:';
+  chatWs=new WebSocket(`${proto}//${location.host}/ws/chat`);
+  chatWs.onopen=()=>showToast('Javris','Chat connected','success',2000);
+  chatWs.onclose=()=>{chatWs=null;setTimeout(connectChatWS,3000);};
+  chatWs.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    if(d.type==='start') showTyping();
+    else if(d.type==='chunk') appendChunk(d.text);
+    else if(d.type==='done'){finalizeStream();setChatSending(false);}
+    else if(d.type==='error'){removeTyping();appendMsg('assistant','❌ '+d.text);setChatSending(false);}
+  };
+}
+
+function chatSend() {
+  const ta=document.getElementById('chat-input');
+  if(!ta) return;
+  const msg=ta.value.trim();
+  if(!msg||chatSending) return;
+  appendMsg('user',msg);
+  ta.value=''; ta.style.height='auto';
+  setChatSending(true);
+  if(chatWs?.readyState===WebSocket.OPEN) {
+    chatWs.send(JSON.stringify({message:msg}));
+  } else {
+    post('/api/chat',{message:msg}).then(d=>{
+      appendMsg('assistant',d.reply||d.error);
+      setChatSending(false);
+    }).catch(e=>{appendMsg('assistant','❌ '+e.message);setChatSending(false);});
+  }
+}
+
+function appendMsg(role,content) {
+  removeTyping();
+  const scroll=document.getElementById('chat-scroll');
+  if(!scroll) return;
+  const avatar=role==='user'?'👤':'🤖';
+  const row=create('div',`msg ${role}`,`<div class="avatar">${avatar}</div><div class="bubble">${md(content)}</div>`);
+  if(role==='assistant'&&lastReplyUsedMemory) {
+    const bubble=row.querySelector('.bubble');
+    if(bubble) bubble.appendChild(create('span','mem-badge','🧠 MEM'));
+    lastReplyUsedMemory=false;
+  }
+  scroll.appendChild(row);
+  scroll.scrollTop=scroll.scrollHeight;
+}
+
+function showTyping() {
+  removeTyping();
+  const scroll=document.getElementById('chat-scroll');
+  if(!scroll) return;
+  const row=create('div','msg assistant',`<div class="avatar">🤖</div><div class="typing-dots"><div class="td"></div><div class="td"></div><div class="td"></div></div>`);
+  row.id='typing-row';
+  scroll.appendChild(row);
+  scroll.scrollTop=scroll.scrollHeight;
+}
+function removeTyping(){document.getElementById('typing-row')?.remove();}
+
+function appendChunk(text) {
+  if(!chatStreamEl) {
+    removeTyping();
+    const scroll=document.getElementById('chat-scroll');
+    if(!scroll) return;
+    const row=create('div','msg assistant',`<div class="avatar">🤖</div><div class="bubble" id="stream-bubble"></div>`);
+    row.id='stream-row';
+    scroll.appendChild(row);
+    chatStreamEl=document.getElementById('stream-bubble');
+    chatStreamText='';
+  }
+  chatStreamText+=text;
+  chatStreamEl.innerHTML=md(chatStreamText);
+  const scroll=document.getElementById('chat-scroll');
+  if(scroll) scroll.scrollTop=scroll.scrollHeight;
+}
+
+function finalizeStream() {
+  if(lastReplyUsedMemory) {
+    const bubble=document.getElementById('stream-bubble');
+    if(bubble) bubble.appendChild(create('span','mem-badge','🧠 MEM'));
+    lastReplyUsedMemory=false;
+  }
+  document.getElementById('stream-row')?.removeAttribute('id');
+  chatStreamEl=null; chatStreamText='';
+}
+
+function setChatSending(v) {
+  chatSending=v;
+  const btn=document.getElementById('chat-send');
+  if(btn) btn.disabled=v;
+}
+
+// ════════════════════════════════════════════════════════════════
+//  COMPUTER PANEL
+// ════════════════════════════════════════════════════════════════
+let compWs=null, compSteps=0;
+
+function buildComputerPanel(body) {
+  body.innerHTML=`
+    <div class="comp-controls">
+      <button class="cbtn" onclick="compInit(true)">⚡ Live Chrome</button>
+      <button class="cbtn" onclick="compInit(false)">🖥 New Browser</button>
+      <button class="cbtn primary" onclick="compShowQuiz()">📝 Quiz</button>
+      <button class="cbtn primary" onclick="compShowAssign()">📚 Assignment</button>
+      <button class="cbtn danger" onclick="compStop()">⏹ Stop</button>
+      <button class="cbtn" onclick="compSnap()">📸</button>
+      <button class="cbtn" onclick="compScroll('down')">↓</button>
+      <button class="cbtn" onclick="compScroll('up')">↑</button>
+    </div>
+    <div id="comp-url-bar" style="display:none;padding:6px 10px;border-bottom:1px solid var(--border);gap:6px">
+      <input class="fi" id="comp-task-url" placeholder="Page URL…" style="margin:0;flex:1"/>
+      <input class="fi" id="comp-task-ctx" placeholder="Subject context (optional)…" style="margin:0;flex:1"/>
+      <button class="cbtn primary" id="comp-start-btn" onclick="compStartQueued()">▶ Start</button>
+    </div>
+    <div class="comp-screenshot" id="comp-shot"><div style="color:var(--muted);font-size:11px;text-align:center;margin-top:30px">Connect browser first</div></div>
+    <div class="step-log" id="comp-log"></div>`;
+  connectCompWS(); loadCompStatus();
+}
+
+let _compMode='';
+function compShowQuiz(){_compMode='quiz';showCompUrlBar('Quiz URL + subject');}
+function compShowAssign(){_compMode='assignment';showCompUrlBar('Assignment URL + instructions');}
+function showCompUrlBar(hint){
+  const bar=document.getElementById('comp-url-bar');
+  if(bar){bar.style.display='flex';document.getElementById('comp-task-url').placeholder=hint||'URL…';}
+}
+async function compStartQueued(){
+  const url=document.getElementById('comp-task-url')?.value.trim();
+  const ctx=document.getElementById('comp-task-ctx')?.value.trim()||'';
+  if(!url){showToast('Error','Enter a URL','error');return;}
+  compSteps=0; document.getElementById('comp-log').innerHTML='';
+  if(_compMode==='quiz'){
+    await post('/api/computer/quiz',{url,subject_context:ctx,max_steps:80});
+    showToast('Computer','Quiz agent started!','success');
+  } else if(_compMode==='assignment'){
+    await post('/api/computer/assignment',{url,instructions:ctx,max_steps:60});
+    showToast('Computer','Assignment agent started!','success');
+  } else {
+    await post('/api/computer/task',{goal:ctx||'Complete the task on this page',url,max_steps:60});
+    showToast('Computer','Task started!','success');
+  }
+  document.getElementById('comp-url-bar').style.display='none';
+}
+async function compInit(live){
+  showToast('Computer',live?'Connecting to Chrome…':'Launching browser…','info');
+  try{await post('/api/computer/init',{use_live_chrome:live});showToast('Computer','Browser ready!','success');connectCompWS();await compSnap();}
+  catch{showToast('Computer','Browser connect failed','error');}
+}
+async function compStop(){await post('/api/computer/stop',{});showToast('Computer','Task stopped','info');}
+async function compSnap(){
+  try{
+    const d=await post('/api/computer/screenshot',{});
+    const shot=document.getElementById('comp-shot');
+    if(shot&&d.screenshot_b64) shot.innerHTML=`<img src="data:image/png;base64,${d.screenshot_b64}" style="max-width:100%;border-radius:6px;border:1px solid var(--border)"/>`;
+  }catch{}
+}
+async function compScroll(dir){await post('/api/computer/action',{action:'scroll',value:dir});setTimeout(compSnap,500);}
+async function loadCompStatus(){
+  try{const d=await get('/api/computer/status');if(d.browser?.connected)showToast('Computer','Browser already connected','info');}catch{}
+}
+function connectCompWS(){
+  if(compWs) return;
+  const proto=location.protocol==='https:'?'wss:':'ws:';
+  compWs=new WebSocket(`${proto}//${location.host}/ws/computer`);
+  compWs.onclose=()=>{compWs=null;};
+  compWs.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    if(d.type==='heartbeat') return;
+    renderCompStep(d);
+    if(['click','navigate','type','submit','check_radio'].includes(d.action)) setTimeout(compSnap,1000);
+    if(d.action==='complete'){showToast('Computer','Task complete!','success');voiceSpeak('Task completed successfully');}
+    if(d.action==='failed') showToast('Computer','Task failed: '+d.description?.substring(0,60),'error');
+  };
+}
+function renderCompStep(s){
+  compSteps++;
+  const log=document.getElementById('comp-log');
+  if(!log) return;
+  const icons={click:'🖱',type:'⌨',navigate:'🌐',scroll:'📜',wait:'⏳',submit:'📤',complete:'✅',failed:'❌',check_radio:'🔘',select_option:'▼',press_key:'⌨'};
+  const ic=icons[s.action]||'⚡';
+  const entry=create('div','step-entry',`<span class="step-num">#${s.step||compSteps}</span><span class="step-desc ${s.success===false?'fail':''}">${ic} ${esc(s.description||'')}</span>`);
+  log.insertBefore(entry,log.firstChild);
+  while(log.children.length>80) log.lastChild.remove();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  TASKS PANEL
+// ════════════════════════════════════════════════════════════════
+function buildTasksPanel(body) {
+  body.innerHTML=`
+    <div style="padding:8px 10px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-shrink:0">
+      <input class="fi" id="new-task-inp" placeholder="New task title…" style="margin:0;flex:1" onkeydown="if(event.key==='Enter')quickAddTask()"/>
+      <button class="cbtn primary" onclick="quickAddTask()">+ Add</button>
+      <select class="fi fs" id="task-filter-sel" style="margin:0;width:90px" onchange="loadTasks()">
+        <option value="todo">To Do</option><option value="in_progress">In Progress</option>
+        <option value="done">Done</option><option value="all">All</option>
+      </select>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:8px 10px" id="tasks-body">
+      <div style="color:var(--muted);font-size:11px">Loading…</div>
+    </div>`;
+  loadTasks();
+}
+async function quickAddTask(){
+  const inp=document.getElementById('new-task-inp');
+  if(!inp||!inp.value.trim()) return;
+  await post('/api/tasks',{action:'create',title:inp.value.trim()});
+  inp.value=''; loadTasks(); showToast('Tasks','Task added','success');
+}
+async function loadTasks(){
+  const status=document.getElementById('task-filter-sel')?.value||'todo';
+  const body=document.getElementById('tasks-body');
+  if(!body) return;
+  try{
+    const d=await post('/api/tasks',{action:'list',filter_status:status});
+    if(!Array.isArray(d)||!d.length){body.innerHTML=`<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">No ${status} tasks</div>`;return;}
+    body.innerHTML=d.map(t=>`
+      <div class="task-row">
+        <div class="task-cb ${t.status==='done'?'done':''}" onclick="toggleTask('${t.task_id}','${t.status}')">${t.status==='done'?'✓':''}</div>
+        <div class="task-info"><div class="task-title-t">${esc(t.title)}</div><div class="task-meta">${t.context?t.context+' · ':''}${t.due_date?'📅 '+t.due_date:''}</div></div>
+        <span class="prio ${t.priority}">${t.priority}</span>
+      </div>`).join('');
+  }catch{body.innerHTML='<div style="color:var(--red);font-size:11px">Failed to load</div>';}
+}
+async function toggleTask(id,status){
+  await post('/api/tasks',{action:status==='done'?'update':'complete',task_id:id,status:status==='done'?'todo':'done'});
+  loadTasks();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  INTELLIGENCE PANEL
+// ════════════════════════════════════════════════════════════════
+function buildIntelPanel(body) {
+  body.innerHTML=`
+    <div style="padding:10px;flex:1;overflow-y:auto">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+        <div class="stat-mini"><div class="sm-val" id="i-facts">—</div><div class="sm-lbl">Facts</div></div>
+        <div class="stat-mini"><div class="sm-val" id="i-pats">—</div><div class="sm-lbl">Patterns</div></div>
+      </div>
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:6px">Known About You</div>
+      <div id="intel-facts"></div>
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:10px 0 6px">Patterns</div>
+      <div id="intel-pats"></div>
+      <button class="ab sec" style="margin-top:8px" onclick="forceAnalyse()">🔄 Re-analyse</button>
+    </div>`;
+  loadIntel();
+}
+async function loadIntel(){
+  try{
+    const d=await get('/api/intelligence');
+    const fl=document.getElementById('intel-facts'),pl=document.getElementById('intel-pats');
+    const ifEl=document.getElementById('i-facts'),ipEl=document.getElementById('i-pats');
+    if(ifEl) ifEl.textContent=d.stats?.total_facts??'—';
+    if(ipEl) ipEl.textContent=d.stats?.total_patterns??'—';
+    if(fl) fl.innerHTML=(d.facts||[]).slice(0,6).map(f=>`<div class="fact-card"><div class="fact-cat">${f.category}</div>${esc(f.statement)}</div>`).join('')||'<div style="color:var(--muted);font-size:11px">Keep chatting to build your model</div>';
+    if(pl) pl.innerHTML=(d.patterns||[]).slice(0,4).map(p=>`<div class="fact-card">${esc(p.description)}<div class="pat-bar-wrap"><div class="pat-bar-fill" style="width:${(p.confidence*100).toFixed(0)}%"></div></div></div>`).join('')||'<div style="color:var(--muted);font-size:11px">No patterns detected yet</div>';
+  }catch{}
+}
+async function forceAnalyse(){
+  showToast('Intelligence','Analysing…','info');
+  await post('/api/intelligence/analyse',{});
+  await loadIntel();
+  showToast('Intelligence','Analysis done','success');
+}
+
+// ════════════════════════════════════════════════════════════════
+//  NOTIFICATIONS PANEL
+// ════════════════════════════════════════════════════════════════
+const notifLog=[];
+function buildNotifsPanel(body){
+  body.innerHTML=`
+    <div style="padding:8px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-shrink:0">
+      <button class="cbtn" onclick="clearNotifs()">🗑 Clear All</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:8px" id="notifs-list">
+      <div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">No notifications yet</div>
+    </div>`;
+  renderNotifs();
+}
+function addNotification(ev){
+  notifLog.unshift({...ev,received:Date.now()});
+  if(notifLog.length>100) notifLog.pop();
+  notifCount++;
+  const nc=document.getElementById('notif-count');
+  if(nc){nc.style.display='flex';nc.textContent=notifCount>9?'9+':notifCount;}
+  renderNotifs();
+  if(Notification.permission==='granted'&&(ev.priority==='high'||ev.priority==='critical'))
+    new Notification(`Javris: ${ev.title||ev.event_type}`,{body:ev.message,icon:'/favicon.ico'});
+}
+function renderNotifs(){
+  const list=document.getElementById('notifs-list');
+  if(!list) return;
+  if(!notifLog.length){list.innerHTML='<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">No notifications yet</div>';return;}
+  const icons={alert:'🚨',suggestion:'💡',digest:'☀️',news_alert:'📰',tool_used:'🔧',morning:'☀️',pattern:'🧠'};
+  list.innerHTML=notifLog.map(n=>`
+    <div class="notif-item ${n.priority||'low'}">
+      <div class="ni-title">${icons[n.event_type]||'⚡'} ${esc(n.title||n.event_type||'Alert')}</div>
+      <div class="ni-msg">${esc(n.message||'')}</div>
+      <div class="ni-time">${new Date(n.received||Date.now()).toLocaleTimeString()}</div>
+    </div>`).join('');
+}
+function clearNotifs(){
+  notifLog.length=0; notifCount=0;
+  const nc=document.getElementById('notif-count');
+  if(nc) nc.style.display='none';
+  renderNotifs();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  WEATHER PANEL
+// ════════════════════════════════════════════════════════════════
+function buildWeatherPanel(body){
+  body.innerHTML=`
+    <div style="padding:8px 10px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-shrink:0">
+      <input class="fi" id="weather-loc" placeholder="City…" style="margin:0;flex:1" onkeydown="if(event.key==='Enter')fetchWeather()"/>
+      <button class="cbtn primary" onclick="fetchWeather()">Get</button>
+    </div>
+    <div id="weather-body" style="flex:1;overflow-y:auto">
+      <div style="color:var(--muted);font-size:11px;text-align:center;padding:30px">Enter a city name</div>
+    </div>`;
+}
+async function fetchWeather(){
+  const loc=document.getElementById('weather-loc')?.value.trim()||'London';
+  const body=document.getElementById('weather-body');
+  if(!body) return;
+  body.innerHTML='<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">Loading…</div>';
+  try{const d=await post('/api/chat',{message:`Get weather for ${loc} with forecast`});body.innerHTML=`<div style="padding:12px;font-size:12px;line-height:1.7">${md(d.reply||'No data')}</div>`;}
+  catch{body.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px">Failed</div>';}
+}
+
+// ════════════════════════════════════════════════════════════════
+//  NEWS PANEL
+// ════════════════════════════════════════════════════════════════
+function buildNewsPanel(body){
+  body.innerHTML=`
+    <div style="padding:8px 10px;border-bottom:1px solid var(--border);display:flex;gap:6px;flex-shrink:0">
+      <input class="fi" id="news-topic-inp" placeholder="Topic (or leave blank)…" style="margin:0;flex:1" onkeydown="if(event.key==='Enter')fetchNews()"/>
+      <button class="cbtn primary" onclick="fetchNews()">Get</button>
+    </div>
+    <div id="news-body" style="flex:1;overflow-y:auto">
+      <div style="color:var(--muted);font-size:11px;text-align:center;padding:30px">Click Get for headlines</div>
+    </div>`;
+}
+async function fetchNews(){
+  const topic=document.getElementById('news-topic-inp')?.value.trim()||'';
+  const body=document.getElementById('news-body');
+  if(!body) return;
+  body.innerHTML='<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">Loading…</div>';
+  try{
+    const msg=topic?`Get top 6 news articles about: ${topic}`:'Get top 6 news headlines right now';
+    const d=await post('/api/chat',{message:msg});
+    body.innerHTML=`<div style="padding:10px;font-size:12px;line-height:1.7">${md(d.reply||'')}</div>`;
+  }catch{body.innerHTML='<div style="color:var(--red);font-size:11px;padding:10px">Failed</div>';}
+}
+
+// ════════════════════════════════════════════════════════════════
+//  RESEARCH PANEL
+// ════════════════════════════════════════════════════════════════
+function buildResearchPanel(body){
+  body.innerHTML=`
+    <div style="padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0">
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <input class="fi" id="research-topic" placeholder="Research topic…" style="margin:0;flex:1" onkeydown="if(event.key==='Enter')startResearch()"/>
+        <select class="fi fs" id="research-depth" style="margin:0;width:70px">
+          <option value="2">Quick</option><option value="3" selected>Deep</option><option value="5">Max</option>
+        </select>
+        <button class="cbtn primary" onclick="startResearch()">🔬 Go</button>
+      </div>
+      <div style="display:flex;gap:5px">
+        <button class="cbtn" onclick="startResearch('AI advancements 2025')">AI</button>
+        <button class="cbtn" onclick="startResearch('technology news today')">Tech</button>
+        <button class="cbtn" onclick="startResearch('science breakthroughs 2025')">Science</button>
+        <button class="cbtn" onclick="startResearch('financial markets analysis')">Finance</button>
+      </div>
+    </div>
+    <div id="research-status" style="padding:6px 10px;font-size:10px;color:var(--muted);border-bottom:1px solid var(--border);flex-shrink:0;display:none">
+      <span id="research-status-text">Researching…</span>
+    </div>
+    <div id="research-body" style="flex:1;overflow-y:auto;padding:10px">
+      <div style="color:var(--muted);font-size:11px;text-align:center;padding:30px">Enter a topic and click Go to start deep research</div>
+    </div>`;
+}
+let researchRunning=false;
+async function startResearch(quickTopic){
+  const topic=quickTopic||document.getElementById('research-topic')?.value?.trim();
+  if(!topic){showToast('Research','Enter a topic first','error');return;}
+  const depth=parseInt(document.getElementById('research-depth')?.value||'3');
+  if(researchRunning){showToast('Research','Already running','info');return;}
+  researchRunning=true;
+  const body=document.getElementById('research-body');
+  const status=document.getElementById('research-status');
+  const statusText=document.getElementById('research-status-text');
+  if(body) body.innerHTML='<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">🔬 Researching…</div>';
+  if(status) status.style.display='';
+  if(statusText) statusText.textContent=`Researching: ${topic}`;
+  try{
+    const r=await fetch('/api/research',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,depth}),signal:AbortSignal.timeout(300000)});
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d=await r.json();
+    if(body){
+      body.innerHTML=`
+        <div style="margin-bottom:10px">
+          <div style="font-size:14px;font-weight:700;color:var(--accent);margin-bottom:4px">${esc(d.topic||topic)}</div>
+          <div style="font-size:10px;color:var(--muted)">${d.sources?.length||0} sources · ${d.search_queries?.length||0} queries</div>
+        </div>
+        <div style="font-size:12px;line-height:1.8">${md(d.summary||d.report||'No summary available')}</div>
+        ${(d.sources||[]).length?`<div style="margin-top:12px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)">Sources</div><div style="margin-top:6px">${(d.sources||[]).slice(0,5).map(s=>`<div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:10px"><a href="${esc(s.url||'')}" target="_blank" style="color:var(--accent)">${esc(s.title||s.url||'')}</a></div>`).join('')}</div>`:''}`;
+    }
+    if(status) status.style.display='none';
+    showToast('Research','Research complete!','success');
+    voiceSpeak(`Research on ${topic} is complete.`);
+  }catch(e){
+    if(body) body.innerHTML=`<div style="color:var(--red);padding:12px;font-size:12px">❌ Research failed: ${esc(e.message)}</div>`;
+    showToast('Research','Research failed','error');
+  }finally{researchRunning=false;}
+}
+
+// ════════════════════════════════════════════════════════════════
+//  PERSONALITY PANEL
+// ════════════════════════════════════════════════════════════════
+function buildPersonalityPanel(body){
+  body.innerHTML=`
+    <div style="flex:1;overflow-y:auto;padding:12px">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)">🤖 AI Settings</div>
+      <label class="fl">Anthropic API Key (for Claude + Computer Agent)</label>
+      <div style="display:flex;gap:5px;margin-bottom:7px">
+        <input class="fi" id="pp-apikey" type="password" placeholder="sk-ant-… (paste to enable Claude)" style="margin:0;flex:1"/>
+        <button class="cbtn primary" onclick="saveApiKey()" style="flex-shrink:0">Set</button>
+      </div>
+      <div id="pp-ai-status" style="font-size:10px;color:var(--muted);margin-bottom:10px">Loading…</div>
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)">👤 Personality</div>
+      <label class="fl">Your Name</label>
+      <input class="fi" id="pp-name" placeholder="How Javris addresses you"/>
+      <label class="fl">Tone</label>
+      <select class="fi fs" id="pp-tone">
+        <option value="conversational">Conversational</option><option value="concise">Concise</option>
+        <option value="formal">Formal</option><option value="witty">Witty</option>
+      </select>
+      <label class="fl">Domain Interests</label>
+      <input class="fi" id="pp-domains" placeholder="AI, finance, tech, health…"/>
+      <label class="fl">Wake Hour (morning digest)</label>
+      <input class="fi" id="pp-wake" type="number" min="0" max="23" placeholder="7"/>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <input type="checkbox" id="pp-speak"/>
+        <label for="pp-speak" style="font-size:12px;color:var(--text);cursor:pointer">Speak alerts aloud</label>
+      </div>
+      <button class="ab pri" onclick="savePersonality()">💾 Save</button>
+      <div id="pp-ok" style="color:var(--accent3);font-size:11px;display:none;margin-top:6px">✓ Saved</div>
+    </div>`;
+  loadPersonality(); loadAiStatus();
+}
+async function loadAiStatus(){
+  try{
+    const d=await get('/api/status');
+    const el=document.getElementById('pp-ai-status');
+    if(!el) return;
+    el.textContent=d.assistant?`✓ AI Online — ${d.model} | ${d.autonomy_events} autonomy events`:'⚠ AI offline';
+    el.style.color=d.assistant?'var(--accent3)':'var(--red)';
+  }catch{}
+}
+async function saveApiKey(){
+  const key=document.getElementById('pp-apikey')?.value?.trim();
+  if(!key) return;
+  try{
+    const r=await post('/api/config/apikey',{anthropic_api_key:key});
+    showToast('Config',r.status==='saved'?'✓ API key saved — Claude is now active!':r.message,r.status==='saved'?'success':'info');
+    document.getElementById('pp-apikey').value='';
+    setTimeout(loadAiStatus,1000);
+  }catch{showToast('Config','Failed to save key','error');}
+}
+async function loadPersonality(){
+  try{
+    const d=await get('/api/personality');
+    const s=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;};
+    s('pp-name',d.owner_name||''); s('pp-tone',d.tone||'conversational');
+    s('pp-domains',(d.domains||[]).join(', ')); s('pp-wake',d.wake_hour??7);
+    const ck=document.getElementById('pp-speak');
+    if(ck) ck.checked=d.speak_proactively||false;
+  }catch{}
+}
+async function savePersonality(){
+  const g=id=>document.getElementById(id)?.value?.trim();
+  const domains=(g('pp-domains')||'').split(',').map(s=>s.trim()).filter(Boolean);
+  await put('/api/personality',{owner_name:g('pp-name')||undefined,tone:g('pp-tone'),domains,wake_hour:parseInt(g('pp-wake'))||7,speak_proactively:document.getElementById('pp-speak')?.checked||false});
+  const ok=document.getElementById('pp-ok');
+  if(ok){ok.style.display='';setTimeout(()=>ok.style.display='none',2500);}
+  showToast('Config','Personality saved','success');
+  loadStatus();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  TOOL CALL VISUALIZER PANEL
+// ════════════════════════════════════════════════════════════════
+const toolCallLog=[];
+
+function buildToolsPanel(body){
+  body.innerHTML=`
+    <div style="padding:6px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;flex-shrink:0">
+      <span style="font-size:10px;color:var(--muted);flex:1">Last 10 tool invocations</span>
+      <button class="cbtn" onclick="clearToolLog()" style="padding:3px 8px;font-size:10px">Clear</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:8px" id="tool-call-list">
+      <div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">No tool calls yet</div>
+    </div>`;
+  renderToolCalls();
+}
+
+function addToolCall(ev){
+  toolCallLog.unshift({
+    name:ev.tool||ev.name||'unknown',
+    params:ev.params||ev.arguments||{},
+    result:ev.result||ev.output||null,
+    status:ev.status||'active',
+    ts:Date.now()
+  });
+  if(toolCallLog.length>10) toolCallLog.pop();
+  renderToolCalls();
+}
+
+function updateToolCallStatus(name,status,result){
+  const entry=toolCallLog.find(t=>t.name===name&&t.status==='active');
+  if(entry){entry.status=status;if(result!=null)entry.result=result;}
+  renderToolCalls();
+}
+
+function renderToolCalls(){
+  const list=document.getElementById('tool-call-list');
+  if(!list) return;
+  if(!toolCallLog.length){
+    list.innerHTML='<div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">No tool calls yet</div>';
+    return;
+  }
+  list.innerHTML=toolCallLog.map(t=>{
+    const ps=typeof t.params==='object'
+      ?Object.entries(t.params).map(([k,v])=>`${k}=${JSON.stringify(v)}`).join(', ')
+      :String(t.params);
+    const rs=t.result?(typeof t.result==='object'?JSON.stringify(t.result).substring(0,80):String(t.result).substring(0,80)):'';
+    const ts=new Date(t.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    return `<div class="tool-card ${t.status}">
+      <div class="tc-head"><span class="tc-name">🔧 ${esc(t.name)}</span><span class="tc-time">${ts}</span></div>
+      ${ps?`<div class="tc-params">${esc(ps)}</div>`:''}
+      ${rs?`<div class="tc-result">${esc(rs)}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function clearToolLog(){toolCallLog.length=0;renderToolCalls();}
+
+// ════════════════════════════════════════════════════════════════
+//  VOICE SYSTEM
+// ════════════════════════════════════════════════════════════════
+let recognition=null,voiceActive=false,voicePaused=false;
+
+function initVoice(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){document.getElementById('voice-label').textContent='Voice not supported';return;}
+  recognition=new SR();
+  recognition.continuous=true; recognition.interimResults=true;
+  recognition.lang='en-US'; recognition.maxAlternatives=1;
+  recognition.onresult=e=>{
+    let interim='',final='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const t=e.results[i][0].transcript;
+      if(e.results[i].isFinal) final+=t; else interim+=t;
+    }
+    if(interim) showVoiceBar(interim);
+    if(final) handleVoiceInput(final.trim());
+  };
+  recognition.onerror=e=>{
+    if(e.error==='no-speech') return;
+    if(e.error==='not-allowed') showToast('Voice','Microphone permission denied — please allow mic access','error');
+    else if(e.error==='network') showToast('Voice','Speech recognition needs internet access','error');
+    else showToast('Voice','Mic error: '+e.error,'error');
+    if(e.error==='not-allowed'){voiceActive=false;setVoiceUI('idle');}
+  };
+  recognition.onend=()=>{
+    if(voiceActive&&!voicePaused){try{recognition.start();}catch{}}
+    else setVoiceUI('idle');
+  };
+}
+
+function toggleVoice(){
+  if(!recognition) initVoice();
+  if(voiceActive){
+    voiceActive=false; voicePaused=true;
+    try{recognition.stop();}catch{}
+    setVoiceUI('idle'); showToast('Voice','Voice paused','info');
+  } else {
+    voiceActive=true; voicePaused=false;
+    try{recognition.start();}catch{}
+    setVoiceUI('listening'); showToast('Voice','Voice active — speak naturally','success');
+    if(Notification.permission==='default') Notification.requestPermission();
+  }
+}
+
+function setVoiceUI(state){
+  const ring=document.getElementById('voice-ring');
+  const wf=document.getElementById('waveform');
+  if(!ring) return;
+  ring.className=state==='listening'?'listening':state==='speaking'?'speaking':'';
+  ring.textContent=state==='listening'?'🔴':state==='speaking'?'🔊':'🎤';
+  if(wf) wf.classList.toggle('active',state==='speaking');
+}
+
+function showVoiceBar(text){
+  const bar=document.getElementById('voice-bar');
+  if(!bar) return;
+  bar.textContent=text; bar.classList.add('show');
+  document.getElementById('voice-label').textContent=text.substring(0,40);
+}
+function hideVoiceBar(){document.getElementById('voice-bar')?.classList.remove('show');}
+
+const WAKE_WORDS=['javris','jarvis','hey javris','ok javris','okay javris'];
+let lastWakeTime=0,voiceCommandMode=false;
+
+async function handleVoiceInput(text){
+  const lower=text.toLowerCase().trim();
+  hideVoiceBar();
+  document.getElementById('voice-label').textContent=text.substring(0,50);
+  const hasWake=WAKE_WORDS.some(w=>lower.startsWith(w)||lower.includes(w));
+  if(hasWake){
+    lastWakeTime=Date.now(); voiceCommandMode=true;
+    let cmd=lower;
+    for(const w of WAKE_WORDS) cmd=cmd.replace(w,'').trim();
+    if(cmd) await routeVoiceCommand(cmd,text);
+    else{voiceSpeak('Yes?');showToast('Voice','Listening for command…','info');}
+    return;
+  }
+  if(voiceCommandMode&&Date.now()-lastWakeTime<15000) await routeVoiceCommand(lower,text);
+}
+
+async function routeVoiceCommand(lower,originalText){
+  lastWakeTime=Date.now();
+  showVoiceBar('⚡ '+originalText);
+  const uiMap=[
+    [/open chat|show chat/,()=>openPanel('chat')],
+    [/open computer|show browser/,()=>openPanel('computer')],
+    [/open tasks?|show tasks?/,()=>openPanel('tasks')],
+    [/open (intelligence|intel)|show intel/,()=>openPanel('intelligence')],
+    [/open (notifications?|alerts?)|show (notifications?|alerts?)/,()=>openPanel('notifications')],
+    [/open weather|show weather/,()=>openPanel('weather')],
+    [/open news|show news/,()=>openPanel('news')],
+    [/open research|show research/,()=>openPanel('research')],
+    [/open (settings?|config|personality)/,()=>openPanel('personality')],
+    [/open tools?|show tools?/,()=>openPanel('tools')],
+    [/work mode|switch to work/,()=>switchMode('work')],
+    [/trading mode|switch to trading/,()=>switchMode('trading')],
+    [/dev(eloper)? mode|switch to dev/,()=>switchMode('dev')],
+    [/focus mode|switch to focus/,()=>switchMode('focus')],
+    [/night mode|switch to night/,()=>switchMode('night')],
+    [/research mode|switch to research/,()=>switchMode('research')],
+    [/close all|minimize all/,()=>Object.keys(panels).forEach(minimizePanel)],
+    [/tile panels?|arrange panels?/,tileAllPanels],
+    [/stop (agent|task|browser|quiz)|cancel task/,()=>post('/api/computer/stop',{})],
+    [/scroll down/,()=>post('/api/computer/action',{action:'scroll',value:'down'})],
+    [/scroll up/,()=>post('/api/computer/action',{action:'scroll',value:'up'})],
+    [/take screenshot|screenshot/,compSnap],
+    [/new session|new chat/,()=>post('/api/session/new',{})],
+  ];
+  for(const [re,fn] of uiMap){
+    if(re.test(lower)){fn();voiceSpeak('Done');showToast('Voice','⚡ '+lower.substring(0,40),'info');setTimeout(hideVoiceBar,1500);return;}
+  }
+  try{
+    setVoiceUI('speaking');
+    const d=await post('/api/voice/command',{text:originalText,context:''});
+    if(d.is_ui_command&&d.ui_params){
+      if(d.ui_params.panel) openPanel(d.ui_params.panel);
+      if(d.ui_params.action==='tile_panels') tileAllPanels();
+    }
+    if(d.response){
+      if(panels['chat']) appendMsg('assistant',d.response);
+      voiceSpeak(d.response);
+      showToast('Voice',d.response.substring(0,80),'info');
+    }
+    if(d.action_taken==='computer_quiz'&&d.data?.url) await post('/api/computer/quiz',{url:d.data.url,max_steps:80});
+  }catch(err){
+    const msg='Sorry, I had an error'+(err?.message?' ('+err.message+')':'');
+    voiceSpeak('Sorry, I had an error');
+    showToast('Voice',msg,'error');
+    console.error('Voice command error:',err);
+  }
+  setTimeout(hideVoiceBar,2000);
+  setVoiceUI('listening');
+}
+
+function voiceSpeak(text){
+  if(!text||!text.trim()||!window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text.replace(/[*#`\[\]]/g,'').substring(0,300));
+  u.rate=1.1; u.pitch=1.0; u.volume=1.0;
+  const voices=speechSynthesis.getVoices();
+  const preferred=voices.find(v=>v.name.includes('Neural')||v.name.includes('Natural')||v.name.includes('Zira')||v.name.includes('Google UK')||(v.lang==='en-US'&&v.localService===false))||voices.find(v=>v.lang.startsWith('en'));
+  if(preferred) u.voice=preferred;
+  u.onstart=()=>setVoiceUI('speaking');
+  u.onend=()=>{if(voiceActive)setVoiceUI('listening');};
+  speechSynthesis.speak(u);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  MAIN WEBSOCKET
+// ════════════════════════════════════════════════════════════════
+let mainWs=null;
+
+function connectMainWS(){
+  try{
+    const proto=location.protocol==='https:'?'wss:':'ws:';
+    mainWs=new WebSocket(`${proto}//${location.host}/ws`);
+    mainWs.onopen=()=>setJarvisStatus('online');
+    mainWs.onclose=()=>{mainWs=null;setJarvisStatus('reconnecting');setTimeout(connectMainWS,4000);};
+    mainWs.onerror=()=>setJarvisStatus('offline');
+    mainWs.onmessage=e=>{
+      let ev;
+      try{ev=JSON.parse(e.data);}catch{return;}
+      if(!ev||!ev.event_type) return;
+      switch(ev.event_type){
+        case 'tool_used':          addToolCall(ev); break;
+        case 'tool_done':          updateToolCallStatus(ev.tool||ev.name,'success',ev.result); break;
+        case 'tool_failed':        updateToolCallStatus(ev.tool||ev.name,'failed',ev.error); break;
+        case 'ambient_context':    updateAmbientStrip(ev); break;
+        case 'memory_hit':         setMemoryFlag(); break;
+        case 'context_suggestion': showContextToast(ev); break;
+        case 'wellness':           showWellnessAlert(ev); break;
+        case 'mode_change':        handleModeChangeEvent(ev); addNotification(ev); break;
+        default:                   addNotification(ev); break;
+      }
+    };
+  }catch{setJarvisStatus('offline');setTimeout(connectMainWS,4000);}
+}
+
+// ── GEMINI LIVE TOGGLE ───────────────────────────────────────────────────
+let geminiLiveActive = false;
+async function toggleGeminiLive() {
+    const btn = document.getElementById('btn-live-toggle');
+    if (!geminiLiveActive) {
+        try {
+            const res = await post('/api/gemini-live/start');
+            if (res.status === 'started' || res.status === 'already_running') {
+                geminiLiveActive = true;
+                btn.style.background = 'var(--accent4)';
+                btn.style.color = '#fff';
+                btn.innerHTML = '🎙️ Live (ON)';
+                showToast('Gemini Live', 'Real-time audio session started.', 'success');
+            }
+        } catch (e) {
+            showToast('Gemini Live Error', e.message, 'error');
+        }
+    } else {
+        try {
+            await post('/api/gemini-live/stop');
+            geminiLiveActive = false;
+            btn.style.background = 'var(--surface2)';
+            btn.style.color = 'var(--accent4)';
+            btn.innerHTML = '🎙️ Live';
+            showToast('Gemini Live', 'Session stopped.', 'info');
+        } catch (e) {
+            showToast('Gemini Live Error', e.message, 'error');
+        }
+    }
+}
+
+
+function setJarvisStatus(state){
+  const badge=document.getElementById('jarvis-status-badge');
+  const txt=document.getElementById('jarvis-status-text');
+  if(!badge||!txt) return;
+  badge.className='';  // clear, keep id via attribute
+  if(state==='online'){txt.textContent='ONLINE';badge.style.borderColor='var(--accent3)';badge.style.color='var(--accent3)';}
+  else if(state==='reconnecting'){txt.textContent='RECONNECTING';badge.style.borderColor='var(--accent4)';badge.style.color='var(--accent4)';}
+  else{txt.textContent='OFFLINE';badge.style.borderColor='var(--red)';badge.style.color='var(--red)';}
+}
+
+// ════════════════════════════════════════════════════════════════
+//  AUTONOMY WEBSOCKET (existing /ws/autonomy)
+// ════════════════════════════════════════════════════════════════
+let autoWs=null;
+function connectAutoWS(){
+  const proto=location.protocol==='https:'?'wss:':'ws:';
+  autoWs=new WebSocket(`${proto}//${location.host}/ws/autonomy`);
+  autoWs.onclose=()=>{autoWs=null;setTimeout(connectAutoWS,5000);};
+  autoWs.onmessage=e=>{
+    const ev=JSON.parse(e.data);
+    if(ev.type==='heartbeat') return;
+    if(ev.event_type==='mode_change') handleModeChangeEvent(ev);
+    
+    // Autonomy trace & approvals
+    if (ev.event_type && ev.event_type.startsWith('task_')) {
+        if (typeof appendTraceEvent === 'function') appendTraceEvent(ev);
+    }
+    if (ev.event_type === 'approval_needed') {
+        if (typeof addApprovalRequest === 'function') addApprovalRequest(ev);
+        showToast('Approval Required', ev.message, 'warning');
+        if(voiceActive) voiceSpeak('Sir, an action requires your approval.');
+    }
+
+    addNotification(ev);
+    if(ev.priority==='high'||ev.priority==='critical'){
+      showToast(ev.title||'Alert',(ev.message||'').substring(0,80),'warning');
+      if(voiceActive&&ev.priority==='critical') voiceSpeak(ev.message);
+    }
+  };
+}
+
+// ════════════════════════════════════════════════════════════════
+//  GESTURE HUD WebSocket
+// ════════════════════════════════════════════════════════════════
+let gestureWs = null;
+let gestureHudTimer = null;
+
+function connectGestureWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  gestureWs = new WebSocket(`${proto}//${location.host}/ws/gestures`);
+
+  gestureWs.onclose = () => {
+    gestureWs = null;
+    setTimeout(connectGestureWS, 6000);
+  };
+
+  gestureWs.onerror = () => {};
+
+  gestureWs.onmessage = e => {
+    const ev = JSON.parse(e.data);
+    if (ev.type === 'heartbeat') return;
+
+    const hud      = document.getElementById('gesture-hud');
+    const ghGesture= document.getElementById('gh-gesture');
+    const ghAction = document.getElementById('gh-action');
+    const ghCursor = document.getElementById('gh-cursor-badge');
+
+    const mode = ev.mode || (ev.cursor_mode ? 'cursor' : 'normal');
+
+    // Mode-aware styling
+    hud.classList.remove('cursor-mode', 'scroll-mode');
+    if (mode === 'cursor') hud.classList.add('cursor-mode');
+    if (mode === 'scroll') hud.classList.add('scroll-mode');
+
+    const modeLabel = { normal: '● NORMAL', cursor: '⊕ CURSOR', scroll: '↕ SCROLL' }[mode] || mode.toUpperCase();
+    const modeHint  = {
+      normal: 'point=cursor  rock=scroll  3=voice',
+      cursor: 'pinch=click  peace=right  ↑↓=scroll  3=back  4=fwd  palm=exit',
+      scroll: 'move hand up/down  •  palm/point/fist=exit',
+    }[mode] || '';
+
+    if (ev.type === 'status') {
+      if (!ev.enabled) { hud.classList.remove('visible'); return; }
+      ghGesture.textContent = modeLabel;
+      ghAction.textContent  = modeHint;
+      ghCursor.style.display = mode !== 'normal' ? 'inline-block' : 'none';
+      ghCursor.textContent   = mode === 'scroll' ? 'SCROLL MODE' : 'CURSOR MODE';
+      hud.classList.add('visible');
+      return;
+    }
+
+    if (ev.type === 'gesture') {
+      const name   = (ev.gesture || '').replace(/_/g, ' ');
+      const action = (ev.action  || '').replace(/_/g, ' ');
+      ghGesture.textContent = name ? `${modeLabel}  ${name.toUpperCase()}` : modeLabel;
+      ghAction.textContent  = ev.is_sequence ? `★ ${action}` : (action || modeHint);
+      ghCursor.style.display = mode !== 'normal' ? 'inline-block' : 'none';
+      ghCursor.textContent   = mode === 'scroll' ? 'SCROLL MODE' : 'CURSOR MODE';
+      hud.classList.add('visible');
+
+      clearTimeout(gestureHudTimer);
+      gestureHudTimer = setTimeout(() => {
+        ghGesture.textContent = modeLabel;
+        ghAction.textContent  = modeHint;
+      }, 3000);
+    }
+  };
+}
+
+// ════════════════════════════════════════════════════════════════
+//  AMBIENT CONTEXT STRIP
+// ════════════════════════════════════════════════════════════════
+let ambientTimer=null;
+function updateAmbientStrip(ev){
+  const strip=document.getElementById('ambient-strip');
+  const txt=document.getElementById('ambient-text');
+  if(!strip||!txt) return;
+  const ctx=ev.context||ev.message||ev.text||'';
+  if(!ctx) return;
+  txt.textContent=ctx.toUpperCase();
+  strip.classList.add('visible');
+  document.getElementById('workspace').classList.add('ambient-on');
+  clearTimeout(ambientTimer);
+  ambientTimer=setTimeout(()=>{
+    strip.classList.remove('visible');
+    document.getElementById('workspace').classList.remove('ambient-on');
+  },15000);
+}
+function tickAmbientTime(){
+  const el=document.getElementById('ambient-time');
+  if(el) el.textContent=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+
+// ════════════════════════════════════════════════════════════════
+//  MEMORY FLAG
+// ════════════════════════════════════════════════════════════════
+function setMemoryFlag(){
+  lastReplyUsedMemory=true;
+  showToast('Memory','Context injected into next reply','info',2000);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  CONTEXT + WELLNESS TOASTS
+// ════════════════════════════════════════════════════════════════
+function showContextToast(ev){showToast(ev.title||'Suggestion',ev.message||ev.text||'','info',6000);}
+function showWellnessAlert(ev){
+  const msg=ev.message||ev.text||'';
+  showToast(ev.title||'Wellness',msg,'warning',8000);
+  if(voiceActive) voiceSpeak(msg);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  STATUS / VITALS / PROVIDER
+// ════════════════════════════════════════════════════════════════
+async function loadStatus(){
+  try{
+    const d=await get('/api/status');
+    const dot=document.getElementById('ai-dot'),lbl=document.getElementById('ai-label');
+    const cdot=document.getElementById('cloud-dot'),clbl=document.getElementById('cloud-label');
+    if(dot) dot.className='dot '+(d.assistant?'on':'off');
+    if(lbl) lbl.textContent=(d.model||'AI').split('-').slice(0,2).join('-');
+    if(cdot) cdot.className='dot '+(d.cloud?'on':'idle');
+    if(clbl) clbl.textContent=d.cloud?'Synced':'Local';
+  }catch{}
+}
+
+async function loadSystemHealth(){
+  try{
+    const d=await get('/api/system');
+    const cpuEl=document.getElementById('vital-cpu');
+    const ramEl=document.getElementById('vital-ram');
+    const cpu=d.cpu_percent??d.cpu;
+    const mem=d.ram_percent??d.memory;
+    if(cpuEl&&cpu!==undefined){
+      const v=Math.round(cpu);
+      cpuEl.textContent=v+'%';
+      cpuEl.style.color=v>85?'var(--red)':v>60?'var(--accent4)':'var(--accent)';
+    }
+    if(ramEl&&mem!==undefined){
+      const v=Math.round(mem);
+      ramEl.textContent=v+'%';
+      ramEl.style.color=v>85?'var(--red)':v>60?'var(--accent4)':'var(--accent)';
+    }
+  }catch{}
+}
+
+async function loadProviderHealth(){
+  try{
+    const d=await get('/api/llm/health');
+    const badge=document.getElementById('provider-badge');
+    const nameEl=document.getElementById('provider-name');
+    if(!badge||!nameEl) return;
+    const first=Array.isArray(d.providers)&&d.providers.length?d.providers[0]:null;
+    const prov=d.provider||(typeof first==='string'?first:first?.name)||d.active_provider||d.routing_order?.[0]||'';
+    const pl=String(prov).toLowerCase();
+    nameEl.textContent=prov||'—';
+    badge.setAttribute('data-provider',
+      pl.includes('groq')?'groq':
+      pl.includes('cerebras')?'cerebras':
+      pl.includes('claude')||pl.includes('anthropic')?'claude':
+      pl.includes('openai')||pl.includes('gpt')?'openai':'');
+  }catch{}
+}
+
+/* ── API helpers ── */
+async function get(url){const r=await fetch(url);if(!r.ok)throw new Error(`HTTP ${r.status}`);return r.json();}
+async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error(`HTTP ${r.status}`);return r.json();}
+async function put(url,body){const r=await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error(`HTTP ${r.status}`);return r.json();}
+
+// ════════════════════════════════════════════════════════════════
+//  TOAST SYSTEM (upgraded — showToast + legacy toast())
+// ════════════════════════════════════════════════════════════════
+function showToast(title,message,type='info',duration=3500){
+  const container=document.getElementById('toast-container');
+  if(!container) return;
+  const t=document.createElement('div');
+  t.className=`toast ${type}`;
+  t.innerHTML=`<div class="toast-title">${esc(title)}</div><div class="toast-msg">${esc(message)}</div>`;
+  t.addEventListener('click',()=>_dismissToast(t));
+  container.appendChild(t);
+  while(container.children.length>5) container.firstChild.remove();
+  setTimeout(()=>_dismissToast(t),duration);
+}
+function _dismissToast(t){
+  if(!t.parentNode) return;
+  t.classList.add('dismissing');
+  setTimeout(()=>t.remove(),260);
+}
+// Legacy single-arg shim used by existing code
+function toast(msg,type=''){showToast('',msg,type||'info',3500);}
+
+// ════════════════════════════════════════════════════════════════
+//  MARKDOWN + UTILS
+// ════════════════════════════════════════════════════════════════
+function md(text){
+  if(!text) return '';
+  return text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/```(\w*)\n?([\s\S]*?)```/g,(_,l,c)=>`<pre><code>${c.trim()}</code></pre>`)
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g,'<em>$1</em>')
+    .replace(/^### (.+)$/gm,'<h3>$1</h3>')
+    .replace(/^## (.+)$/gm,'<h2>$1</h2>')
+    .replace(/^# (.+)$/gm,'<h1>$1</h1>')
+    .replace(/^> (.+)$/gm,'<blockquote>$1</blockquote>')
+    .replace(/^- (.+)$/gm,'<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g,s=>`<ul>${s}</ul>`)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>');
+}
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function create(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;if(html!==undefined)e.innerHTML=html;return e;}
+
+// ════════════════════════════════════════════════════════════════
+//  MODES
+// ════════════════════════════════════════════════════════════════
+const MODE_META={
+  work:{icon:'💼',accent:'#00d4ff'},trading:{icon:'📈',accent:'#10b981'},
+  dev:{icon:'⌨️',accent:'#7c3aed'},research:{icon:'🔬',accent:'#ec4899'},
+  focus:{icon:'🎯',accent:'#f59e0b'},night:{icon:'🌙',accent:'#4f46e5'},
+};
+let _modeMenuOpen=false;
+function toggleModeMenu(){
+  _modeMenuOpen=!_modeMenuOpen;
+  const m=document.getElementById('mode-menu');
+  if(m) m.style.display=_modeMenuOpen?'block':'none';
+}
+document.addEventListener('click',e=>{
+  if(!e.target.closest('#mode-btn')&&!e.target.closest('#mode-menu')){
+    _modeMenuOpen=false;
+    const m=document.getElementById('mode-menu');
+    if(m) m.style.display='none';
+  }
+});
+async function switchMode(modeId){
+  _modeMenuOpen=false;
+  document.getElementById('mode-menu').style.display='none';
+  try{
+    const d=await post('/api/modes/switch',{mode_id:modeId});
+    if(d.error){showToast('Mode',d.error,'error');return;}
+    const meta=MODE_META[modeId]||{};
+    const icon=document.getElementById('mode-icon'),name=document.getElementById('mode-name');
+    if(icon) icon.textContent=meta.icon||'🔧';
+    if(name) name.textContent=d.name||modeId;
+    if(meta.accent) document.documentElement.style.setProperty('--accent',meta.accent);
+    Object.keys(panels).forEach(id=>closePanel(id));
+    await new Promise(r=>setTimeout(r,100));
+    const modePanels=d.panels||[];
+    modePanels.forEach((pid,i)=>setTimeout(()=>openPanel(pid),i*80));
+    if(d.layout==='tile') setTimeout(tileAllPanels,modePanels.length*80+200);
+    showToast('Mode',`${meta.icon||''} ${d.name||modeId} activated`,'success');
+    voiceSpeak(`${d.name||modeId} activated`);
+  }catch{showToast('Mode','Mode switch failed','error');}
+}
+function handleModeChangeEvent(ev){
+  const data=ev.data||{};
+  if(data.mode_id){
+    const meta=MODE_META[data.mode_id]||{};
+    const icon=document.getElementById('mode-icon'),name=document.getElementById('mode-name');
+    if(icon) icon.textContent=data.icon||meta.icon||'🔧';
+    if(name) name.textContent=data.mode_name||data.mode_id;
+    if(data.color_accent) document.documentElement.style.setProperty('--accent',data.color_accent);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  WAVEFORM INIT
+// ════════════════════════════════════════════════════════════════
+function initWaveform(){
+  const wf=document.getElementById('waveform');
+  if(!wf) return;
+  const heights=[4,6,10,16,20,22,18,22,14,20,14,22,18,22,16,10,6,8,4,6];
+  const anims=['wfa','wfa','wfa','wfa','wfa'];
+  wf.innerHTML=heights.map((h,i)=>{
+    const dur=(0.35+((i*37+13)%40)/100).toFixed(2);
+    return `<div class="wf-bar" style="--h:${h}px;animation-name:wfa;animation-duration:${dur}s;animation-iteration-count:infinite;animation-direction:alternate;animation-timing-function:ease-in-out;animation-delay:${(i*0.04).toFixed(2)}s"></div>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════════════════
+//  KEYBOARD SHORTCUTS
+// ════════════════════════════════════════════════════════════════
+document.addEventListener('keydown',e=>{
+  if(e.ctrlKey){
+    const map={'1':'chat','2':'computer','3':'tasks','4':'intelligence','5':'weather','6':'news','7':'notifications','8':'research','9':'personality','0':'tools'};
+    if(map[e.key]){e.preventDefault();openPanel(map[e.key]);}
+    if(e.key==='t'){e.preventDefault();tileAllPanels();}
+    if(e.key==='m'){e.preventDefault();toggleVoice();}
+  }
+});
+
+// ════════════════════════════════════════════════════════════════
+//  BOOT
+// ════════════════════════════════════════════════════════════════
+window.addEventListener('load',async()=>{
+  window.speechSynthesis?.getVoices();
+  setTimeout(()=>window.speechSynthesis?.getVoices(),500);
+
+  initWaveform();
+  tickAmbientTime();
+  setInterval(tickAmbientTime,1000);
+
+  // Show ambient strip briefly on startup
+  const strip=document.getElementById('ambient-strip');
+  const ambTxt=document.getElementById('ambient-text');
+  if(strip&&ambTxt){
+    ambTxt.textContent='JAVRIS OS — INITIALIZING SYSTEMS';
+    strip.classList.add('visible');
+    document.getElementById('workspace').classList.add('ambient-on');
+    setTimeout(()=>{
+      strip.classList.remove('visible');
+      document.getElementById('workspace').classList.remove('ambient-on');
+    },5000);
+  }
+
+  await loadStatus();
+  setInterval(loadStatus,30000);
+
+  await loadSystemHealth();
+  setInterval(loadSystemHealth,3000);   // vitals every 3s
+
+  await loadProviderHealth();
+  setInterval(loadProviderHealth,30000); // provider every 30s
+
+  connectChatWS();
+  connectAutoWS();
+  connectMainWS();
+  connectGestureWS();
+
+  openPanel('chat');
+  setTimeout(()=>showToast('Javris OS','Ctrl+0–9=panels  Ctrl+T=tile  Ctrl+M=mic  Say "Javris…"','info',5000),1000);
+});
+</script>

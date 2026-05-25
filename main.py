@@ -88,32 +88,64 @@ def cli():
 @click.option("--host", default=None)
 @click.option("--port", default=None, type=int)
 @click.option("--voice/--no-voice", default=False, help="Enable voice engine")
-def serve(host, port, voice):
+@click.option("--gesture/--no-gesture", default=False, help="Enable gesture control camera")
+@click.option("--camera", default=0, type=int, help="Camera device index for gesture control")
+def serve(host, port, voice, gesture, camera):
     """Start web server, dashboard, and autonomy engine."""
     banner()
 
     async def _serve():
         import uvicorn
         from core.config import get_config
-        from server.app import app, set_dependencies
+        from server.app import app, set_dependencies, set_gesture_controller
 
         cfg = get_config()
-        
+
         h = host or cfg.javris_host
         p = port or cfg.javris_port
 
         console.print(f"\n[bold green]Javris running at[/bold green] [cyan]http://{h}:{p}[/cyan]")
         console.print(f"[dim]Mode: API Server | Primary Model: {cfg.javris_primary_model}[/dim]")
+        if gesture:
+            console.print(f"[dim]Gesture control: camera {camera}[/dim]")
         console.print("[dim]Press Ctrl+C to stop[/dim]\n")
 
         config = uvicorn.Config(app=app, host=h, port=p, log_level="info", timeout_keep_alive=600)
         server = uvicorn.Server(config)
+
+        async def _run_server():
+            try:
+                await server.serve()
+            finally:
+                from server.app import _assistant as _srv_assistant
+                if _srv_assistant:
+                    await _srv_assistant.close()
+
+        tasks = [asyncio.create_task(_run_server())]
+
+        if gesture:
+            from gesture import GestureController
+
+            async def _run_gesture():
+                gc = GestureController(camera_id=camera, show_preview=True)
+                set_gesture_controller(gc)
+                # Wait for assistant to be ready (startup initialises it in background)
+                for _ in range(30):
+                    from server.app import _assistant as _srv_assistant
+                    if _srv_assistant:
+                        gc.set_assistant(_srv_assistant)
+                        gc.set_autonomy(_srv_assistant.autonomy)
+                        break
+                    await asyncio.sleep(1)
+                await gc.start_embedded()
+                console.print("[bold cyan]Gesture control active alongside server.[/bold cyan]")
+
+            tasks.append(asyncio.create_task(_run_gesture()))
+
         try:
-            await server.serve()
-        finally:
-            from server.app import _assistant as _srv_assistant
-            if _srv_assistant:
-                await _srv_assistant.close()
+            await asyncio.gather(*tasks)
+        except KeyboardInterrupt:
+            pass
 
     asyncio.run(_serve())
 

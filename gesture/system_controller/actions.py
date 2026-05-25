@@ -180,14 +180,225 @@ def press_enter(**_) -> ActionResult:
         return ActionResult(False, str(e))
 
 
+def mute_volume(**_) -> ActionResult:
+    """Toggle system mute."""
+    try:
+        pag = _import_pyautogui()
+        pag.press("volumemute")
+        return ActionResult(True, "Volume muted/unmuted")
+    except Exception as e:
+        return ActionResult(False, str(e))
+
+
+def brightness_up(steps: int = 10, **_) -> ActionResult:
+    """Increase screen brightness."""
+    try:
+        if SYSTEM == "Windows":
+            subprocess.run(
+                ["powershell", "-Command",
+                 f"(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods)"
+                 f".WmiSetBrightness(1,[Math]::Min(100,"
+                 f"(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightness).CurrentBrightness+{steps}))"],
+                capture_output=True, timeout=5,
+            )
+        elif SYSTEM == "Darwin":
+            subprocess.run(["osascript", "-e",
+                            f"tell application \"System Events\" to key code 144"], timeout=3)
+        else:
+            subprocess.run(["brightnessctl", "set", f"+{steps}%"], timeout=3)
+        return ActionResult(True, f"Brightness +{steps}%")
+    except Exception as e:
+        return ActionResult(False, str(e))
+
+
+def brightness_down(steps: int = 10, **_) -> ActionResult:
+    """Decrease screen brightness."""
+    try:
+        if SYSTEM == "Windows":
+            subprocess.run(
+                ["powershell", "-Command",
+                 f"(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods)"
+                 f".WmiSetBrightness(1,[Math]::Max(0,"
+                 f"(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightness).CurrentBrightness-{steps}))"],
+                capture_output=True, timeout=5,
+            )
+        elif SYSTEM == "Darwin":
+            subprocess.run(["osascript", "-e",
+                            f"tell application \"System Events\" to key code 145"], timeout=3)
+        else:
+            subprocess.run(["brightnessctl", "set", f"{steps}%-"], timeout=3)
+        return ActionResult(True, f"Brightness -{steps}%")
+    except Exception as e:
+        return ActionResult(False, str(e))
+
+
+def lock_screen(**_) -> ActionResult:
+    """Lock the screen."""
+    try:
+        if SYSTEM == "Windows":
+            subprocess.run(["rundll32.exe", "user32.dll,LockWorkStation"])
+        elif SYSTEM == "Darwin":
+            subprocess.run(["pmset", "displaysleepnow"])
+        else:
+            subprocess.run(["loginctl", "lock-session"])
+        return ActionResult(True, "Screen locked")
+    except Exception as e:
+        return ActionResult(False, str(e))
+
+
+def close_window(**_) -> ActionResult:
+    """Close the active window."""
+    try:
+        pag = _import_pyautogui()
+        if SYSTEM == "Darwin":
+            pag.hotkey("command", "w")
+        else:
+            pag.hotkey("alt", "F4")
+        return ActionResult(True, "Window closed")
+    except Exception as e:
+        return ActionResult(False, str(e))
+
+
+def show_desktop(**_) -> ActionResult:
+    """Show/hide the desktop."""
+    try:
+        pag = _import_pyautogui()
+        if SYSTEM == "Windows":
+            pag.hotkey("win", "d")
+        elif SYSTEM == "Darwin":
+            pag.hotkey("command", "f3")
+        else:
+            pag.hotkey("super", "d")
+        return ActionResult(True, "Desktop shown")
+    except Exception as e:
+        return ActionResult(False, str(e))
+
+
+def zoom_in(**_) -> ActionResult:
+    """Zoom in (Ctrl++)."""
+    try:
+        pag = _import_pyautogui()
+        pag.hotkey("ctrl", "+")
+        return ActionResult(True, "Zoomed in")
+    except Exception as e:
+        return ActionResult(False, str(e))
+
+
+def zoom_out(**_) -> ActionResult:
+    """Zoom out (Ctrl+-)."""
+    try:
+        pag = _import_pyautogui()
+        pag.hotkey("ctrl", "-")
+        return ActionResult(True, "Zoomed out")
+    except Exception as e:
+        return ActionResult(False, str(e))
+
+
+def browser_back(**_) -> ActionResult:
+    """Navigate browser back (Alt+Left)."""
+    try:
+        pag = _import_pyautogui()
+        pag.hotkey("alt", "left")
+        return ActionResult(True, "Browser back")
+    except Exception as e:
+        return ActionResult(False, str(e))
+
+
+def browser_forward(**_) -> ActionResult:
+    """Navigate browser forward (Alt+Right)."""
+    try:
+        pag = _import_pyautogui()
+        pag.hotkey("alt", "right")
+        return ActionResult(True, "Browser forward")
+    except Exception as e:
+        return ActionResult(False, str(e))
+
+
+def mouse_down(**_) -> ActionResult:
+    """Press and hold left mouse button (for drag)."""
+    try:
+        import pyautogui
+        pyautogui.FAILSAFE = False
+        pyautogui.mouseDown(button="left")
+        return ActionResult(True, "Mouse down")
+    except Exception as e:
+        return ActionResult(False, str(e))
+
+
+def mouse_up(**_) -> ActionResult:
+    """Release left mouse button (end drag)."""
+    try:
+        import pyautogui
+        pyautogui.FAILSAFE = False
+        pyautogui.mouseUp(button="left")
+        return ActionResult(True, "Mouse up")
+    except Exception as e:
+        return ActionResult(False, str(e))
+
+
+def trigger_assistant_chat(**_) -> ActionResult:
+    """Open Javris in the default browser and focus the chat panel."""
+    try:
+        import webbrowser
+        webbrowser.open("http://localhost:8000")
+        return ActionResult(True, "Opened Javris in browser")
+    except Exception as e:
+        return ActionResult(False, str(e))
+
+
+def click_left(x_norm: float = -1.0, y_norm: float = -1.0, **_) -> ActionResult:
+    """Left-click at current position or at normalised coords."""
+    try:
+        import pyautogui
+        if x_norm >= 0 and y_norm >= 0:
+            screen_w, screen_h = pyautogui.size()
+            pyautogui.click(int(x_norm * screen_w), int(y_norm * screen_h))
+        else:
+            pyautogui.click()
+        return ActionResult(True, "Left click")
+    except Exception as e:
+        return ActionResult(False, str(e))
+
+
+def click_right(x_norm: float = -1.0, y_norm: float = -1.0, **_) -> ActionResult:
+    """Right-click at current position or at normalised coords."""
+    try:
+        import pyautogui
+        if x_norm >= 0 and y_norm >= 0:
+            screen_w, screen_h = pyautogui.size()
+            pyautogui.rightClick(int(x_norm * screen_w), int(y_norm * screen_h))
+        else:
+            pyautogui.rightClick()
+        return ActionResult(True, "Right click")
+    except Exception as e:
+        return ActionResult(False, str(e))
+
+
 def cursor_mode(**_) -> ActionResult:
     """Signal to enter cursor-control mode (handled in GestureController)."""
     return ActionResult(True, "cursor_mode_activated")
 
 
 def activate_voice(**_) -> ActionResult:
-    """Signal to activate voice assistant (handled in integration layer)."""
-    return ActionResult(True, "voice_assistant_activated")
+    """Activate the Javris voice assistant via the API."""
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            "http://localhost:8000/api/voice/listen_once",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=3)
+        return ActionResult(True, "Voice assistant activated")
+    except Exception as e:
+        # Fallback: open browser so user can use the mic button
+        try:
+            import webbrowser
+            webbrowser.open("http://localhost:8000")
+        except Exception:
+            pass
+        return ActionResult(True, "Voice triggered (fallback)")
 
 
 def move_cursor(x_norm: float = 0.5, y_norm: float = 0.5, **_) -> ActionResult:
@@ -206,22 +417,51 @@ def move_cursor(x_norm: float = 0.5, y_norm: float = 0.5, **_) -> ActionResult:
 # ── Action registry ────────────────────────────────────────────────
 
 ACTION_REGISTRY: Dict[str, Callable] = {
-    "open_chrome":         lambda **p: open_application(app=p.get("app", "chrome")),
-    "open_application":    open_application,
-    "pause_media":         pause_media,
-    "toggle_play_pause":   toggle_play_pause,
-    "increase_volume":     increase_volume,
-    "decrease_volume":     decrease_volume,
-    "take_screenshot":     take_screenshot,
-    "switch_window_next":  switch_window_next,
-    "switch_window_prev":  switch_window_prev,
-    "minimize_window":     minimize_window,
-    "scroll_up":           scroll_up,
-    "scroll_down":         scroll_down,
-    "press_enter":         press_enter,
-    "cursor_mode":         cursor_mode,
-    "activate_voice":      activate_voice,
-    "move_cursor":         move_cursor,
+    # Application control
+    "open_chrome":              lambda **p: open_application(app=p.get("app", "chrome")),
+    "open_application":         open_application,
+    # Media
+    "pause_media":              pause_media,
+    "toggle_play_pause":        toggle_play_pause,
+    "mute_volume":              mute_volume,
+    # Volume
+    "increase_volume":          increase_volume,
+    "decrease_volume":          decrease_volume,
+    # Brightness
+    "brightness_up":            brightness_up,
+    "brightness_down":          brightness_down,
+    # Screenshot
+    "take_screenshot":          take_screenshot,
+    # Window management
+    "switch_window_next":       switch_window_next,
+    "switch_window_prev":       switch_window_prev,
+    "minimize_window":          minimize_window,
+    "close_window":             close_window,
+    "show_desktop":             show_desktop,
+    # Scroll
+    "scroll_up":                scroll_up,
+    "scroll_down":              scroll_down,
+    # Zoom
+    "zoom_in":                  zoom_in,
+    "zoom_out":                 zoom_out,
+    # Keyboard
+    "press_enter":              press_enter,
+    # Mouse
+    "cursor_mode":              cursor_mode,
+    "move_cursor":              move_cursor,
+    "click_left":               click_left,
+    "click_right":              click_right,
+    # System
+    "lock_screen":              lock_screen,
+    # Browser navigation
+    "browser_back":             browser_back,
+    "browser_forward":          browser_forward,
+    # Mouse drag primitives (used internally by cursor mode)
+    "mouse_down":               mouse_down,
+    "mouse_up":                 mouse_up,
+    # Javris assistant
+    "activate_voice":           activate_voice,
+    "trigger_assistant_chat":   trigger_assistant_chat,
 }
 
 

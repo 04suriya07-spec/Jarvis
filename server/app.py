@@ -70,9 +70,12 @@ _research_agent = None
 _digest_agent = None
 _computer_agent = None
 _mode_manager = None
+_gesture_controller = None   # injected by main.py when gesture control is enabled
 
 # Computer-agent step subscribers (WebSocket live feed)
 _computer_ws_subscribers: list[asyncio.Queue] = []
+# Gesture WebSocket subscribers
+_gesture_ws_subscribers: list[asyncio.Queue] = []
 _event_bus = get_event_bus()
 _policy = get_policy_engine()
 _audit = get_audit_log()
@@ -104,6 +107,46 @@ def set_dependencies(assistant, voice, cloud, research_agent, digest_agent):
     from core.modes import ModeManager
     _mode_manager = ModeManager(autonomy=assistant.autonomy if assistant else None)
     app.state.mode_manager = _mode_manager
+
+
+def set_gesture_controller(gc) -> None:
+    """Inject the GestureController so the /ws/gestures endpoint can relay events."""
+    global _gesture_controller
+    _gesture_controller = gc
+    app.state.gesture_controller = gc
+    # Hook: relay every gesture event to WebSocket subscribers
+    if gc:
+        original_put = gc._put_event_nowait
+        def _relaying_put(event):
+            original_put(event)
+            _broadcast_gesture_event(event)
+        gc._put_event_nowait = _relaying_put
+
+
+def _broadcast_gesture_event(event) -> None:
+    """Push gesture event to all /ws/gestures subscribers (non-async, thread-safe)."""
+    gc = _gesture_controller
+    payload = {
+        "type": "gesture",
+        "gesture": event.gesture.name,
+        "action": event.action,
+        "confidence": round(event.gesture.confidence, 3),
+        "is_sequence": getattr(event.gesture, "is_sequence", False),
+        "mode": gc.mode if gc else "normal",
+        "cursor_mode": gc.cursor_mode if gc else False,
+        "ts": time.time(),
+    }
+    dead = []
+    for q in _gesture_ws_subscribers:
+        try:
+            q.put_nowait(payload)
+        except Exception:
+            dead.append(q)
+    for q in dead:
+        try:
+            _gesture_ws_subscribers.remove(q)
+        except ValueError:
+            pass
 
 
 # ── Startup / shutdown ────────────────────────────────────────────
@@ -145,21 +188,28 @@ async def _init_app_assistant():
 @app.on_event("startup")
 async def startup():
     async def _do_init():
-        global _assistant, _voice, _cloud, _research_agent, _digest_agent
+        global _assistant, _voice, _cloud, _research_agent, _digest_agent, _mode_manager
         if _assistant is None:
             logger.info("Initializing Assistant in-app (background task)...")
             try:
                 _assistant, _voice, _cloud, _research_agent, _digest_agent = await _init_app_assistant()
                 app.state.assistant = _assistant
                 app.state.voice = _voice
-                
+
+                from core.modes import ModeManager
+                _mode_manager = ModeManager(autonomy=_assistant.autonomy)
+                app.state.mode_manager = _mode_manager
+
                 if cfg.javris_autonomy_enabled:
                     _assistant.start_autonomy()
                     logger.info("Autonomy engine started.")
-                
+
                 logger.info("Background startup complete. Javris is ready.")
             except Exception as e:
                 logger.error(f"Background startup failed: {e}", exc_info=True)
+
+    if cfg.javris_secret_key == "change_me":
+        logger.warning("SECURITY: javris_secret_key is still the default 'change_me' — set a strong secret in .env before deploying")
 
     asyncio.create_task(_do_init())
     logger.info("Server port open. AI models loading in background...")
@@ -239,6 +289,200 @@ class TaskRequest(BaseModel):
 
 
 # ── Core routes ───────────────────────────────────────────────────
+
+@app.get("/gesture-test", response_class=HTMLResponse)
+async def gesture_test_page():
+    html = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Javris — Gesture Test</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:#050810;color:#e0e8ff;font-family:'Segoe UI',monospace;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:30px 20px;}
+  h1{font-size:22px;letter-spacing:4px;color:#00d4ff;margin-bottom:6px;text-transform:uppercase;}
+  .sub{font-size:11px;color:rgba(255,255,255,.35);letter-spacing:2px;margin-bottom:30px;}
+  .status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#333;margin-right:6px;vertical-align:middle;}
+  .status-dot.on{background:#00d4ff;box-shadow:0 0 8px #00d4ff;}
+  #ws-status{font-size:11px;letter-spacing:1px;color:rgba(255,255,255,.4);margin-bottom:28px;}
+
+  /* BIG gesture display */
+  #gesture-now{
+    width:420px;padding:28px 20px;text-align:center;
+    background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.2);
+    border-radius:14px;margin-bottom:24px;transition:all .15s;
+  }
+  #gesture-now.active{background:rgba(0,212,255,.10);border-color:rgba(0,212,255,.7);box-shadow:0 0 30px rgba(0,212,255,.2);}
+  #gname{font-size:46px;font-weight:700;color:#00d4ff;letter-spacing:2px;text-transform:uppercase;min-height:58px;}
+  #gaction{font-size:13px;color:rgba(255,255,255,.55);letter-spacing:2px;margin-top:6px;min-height:18px;}
+  #gconf{margin-top:14px;height:5px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden;}
+  #gconf-bar{height:100%;background:#00d4ff;border-radius:3px;width:0%;transition:width .2s;box-shadow:0 0 8px #00d4ff;}
+
+  /* Mode badge */
+  #mode-badge{
+    padding:6px 18px;border-radius:20px;font-size:12px;letter-spacing:3px;
+    text-transform:uppercase;margin-bottom:24px;
+    background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.4);color:#00d4ff;
+  }
+  #mode-badge.cursor{background:rgba(0,200,255,.12);border-color:rgba(0,200,255,.6);color:#00c8ff;}
+  #mode-badge.scroll{background:rgba(16,185,129,.1);border-color:rgba(16,185,129,.5);color:#10b981;}
+
+  /* Stats row */
+  .stats{display:flex;gap:20px;margin-bottom:28px;}
+  .stat{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:12px 20px;text-align:center;min-width:90px;}
+  .stat .n{font-size:28px;font-weight:700;color:#00d4ff;}
+  .stat .l{font-size:9px;letter-spacing:2px;color:rgba(255,255,255,.35);margin-top:3px;text-transform:uppercase;}
+
+  /* Log */
+  #log{width:420px;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:12px;max-height:320px;overflow-y:auto;}
+  #log h3{font-size:9px;letter-spacing:3px;color:rgba(255,255,255,.3);text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,.06);}
+  .log-entry{display:flex;gap:10px;align-items:flex-start;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:12px;}
+  .log-entry:last-child{border-bottom:none;}
+  .log-time{color:rgba(255,255,255,.25);min-width:42px;font-size:10px;padding-top:1px;}
+  .log-badge{padding:2px 7px;border-radius:4px;font-size:9px;letter-spacing:1px;text-transform:uppercase;min-width:54px;text-align:center;font-weight:600;}
+  .log-badge.normal{background:rgba(0,212,255,.15);color:#00d4ff;}
+  .log-badge.cursor{background:rgba(0,200,255,.15);color:#00c8ff;}
+  .log-badge.scroll{background:rgba(16,185,129,.15);color:#10b981;}
+  .log-badge.seq{background:rgba(255,200,0,.15);color:#ffc800;}
+  .log-text{color:rgba(255,255,255,.7);flex:1;}
+  .log-conf{color:rgba(255,255,255,.25);font-size:10px;margin-top:2px;}
+
+  /* Cheat sheet */
+  #cheatsheet{width:420px;margin-top:22px;}
+  #cheatsheet h3{font-size:9px;letter-spacing:3px;color:rgba(255,255,255,.25);text-transform:uppercase;margin-bottom:10px;}
+  .gs-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+  .gs-item{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:8px 10px;font-size:11px;}
+  .gs-item .gn{color:#00d4ff;font-weight:600;margin-bottom:2px;}
+  .gs-item .ga{color:rgba(255,255,255,.45);font-size:10px;}
+</style>
+</head>
+<body>
+<h1>Javris Gesture Test</h1>
+<div class="sub">Real-time gesture detection · WebSocket feed</div>
+
+<div id="ws-status"><span class="status-dot" id="dot"></span><span id="ws-txt">Connecting…</span></div>
+
+<div id="mode-badge">● NORMAL</div>
+
+<div id="gesture-now">
+  <div id="gname">—</div>
+  <div id="gaction">Waiting for gesture…</div>
+  <div id="gconf"><div id="gconf-bar"></div></div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="n" id="st-total">0</div><div class="l">Gestures</div></div>
+  <div class="stat"><div class="n" id="st-actions">0</div><div class="l">Actions</div></div>
+  <div class="stat"><div class="n" id="st-fps">—</div><div class="l">Conf %</div></div>
+</div>
+
+<div id="log"><h3>Live Event Log</h3></div>
+
+<div id="cheatsheet">
+  <h3>Gesture Reference</h3>
+  <div class="gs-grid">
+    <div class="gs-item"><div class="gn">Open Palm</div><div class="ga">Show / hide desktop</div></div>
+    <div class="gs-item"><div class="gn">Closed Fist</div><div class="ga">Pause / play media</div></div>
+    <div class="gs-item"><div class="gn">Thumbs Up</div><div class="ga">Volume up (+5)</div></div>
+    <div class="gs-item"><div class="gn">Thumbs Down</div><div class="ga">Volume down (−5)</div></div>
+    <div class="gs-item"><div class="gn">Peace / V</div><div class="ga">Take screenshot</div></div>
+    <div class="gs-item"><div class="gn">Pointing</div><div class="ga">Enter cursor mode</div></div>
+    <div class="gs-item"><div class="gn">3 Fingers</div><div class="ga">Activate voice</div></div>
+    <div class="gs-item"><div class="gn">4 Fingers</div><div class="ga">Alt+Tab next window</div></div>
+    <div class="gs-item"><div class="gn">OK Sign</div><div class="ga">Press Enter</div></div>
+    <div class="gs-item"><div class="gn">Rock On (\m/)</div><div class="ga">Enter scroll mode</div></div>
+    <div class="gs-item"><div class="gn">Finger Gun</div><div class="ga">Lock screen</div></div>
+    <div class="gs-item"><div class="gn">Call Me</div><div class="ga">Open Javris chat</div></div>
+    <div class="gs-item"><div class="gn">Swipe Left/Right</div><div class="ga">Switch window</div></div>
+    <div class="gs-item"><div class="gn">Swipe Up/Down</div><div class="ga">Scroll page</div></div>
+  </div>
+</div>
+
+<script>
+var total=0, actions=0;
+
+function pad(n){return String(n).padStart(2,'0');}
+function now(){var d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());}
+
+function flash(name, action, conf, mode, isSeq){
+  var box=document.getElementById('gesture-now');
+  var gname=document.getElementById('gname');
+  var gaction=document.getElementById('gaction');
+  var bar=document.getElementById('gconf-bar');
+  var badge=document.getElementById('mode-badge');
+
+  gname.textContent=name.replace(/_/g,' ').toUpperCase();
+  gaction.textContent=(isSeq?'⚡ SEQ: ':'')+action;
+  bar.style.width=Math.round(conf*100)+'%';
+  document.getElementById('st-fps').textContent=Math.round(conf*100);
+
+  box.classList.add('active');
+  setTimeout(function(){box.classList.remove('active');},600);
+
+  // Mode badge
+  var modeLabels={normal:'● NORMAL',cursor:'⊕  CURSOR MODE',scroll:'↕  SCROLL MODE'};
+  badge.textContent=modeLabels[mode]||'● NORMAL';
+  badge.className='';
+  if(mode==='cursor')badge.classList.add('cursor');
+  else if(mode==='scroll')badge.classList.add('scroll');
+
+  // Stats
+  total++;
+  actions++;
+  document.getElementById('st-total').textContent=total;
+  document.getElementById('st-actions').textContent=actions;
+}
+
+function addLog(name, action, conf, mode, isSeq){
+  var log=document.getElementById('log');
+  var entry=document.createElement('div');
+  entry.className='log-entry';
+  var cls=isSeq?'seq':(mode||'normal');
+  entry.innerHTML=
+    '<span class="log-time">'+now()+'</span>'+
+    '<span class="log-badge '+cls+'">'+(isSeq?'SEQ':mode.toUpperCase())+'</span>'+
+    '<div><div class="log-text">'+name.replace(/_/g,' ')+(action?' → '+action:'')+'</div>'+
+    '<div class="log-conf">'+Math.round(conf*100)+'% confidence</div></div>';
+  var h=log.querySelector('h3');
+  h.after(entry);
+  // keep max 30 entries
+  var all=log.querySelectorAll('.log-entry');
+  if(all.length>30)all[all.length-1].remove();
+}
+
+function connect(){
+  var proto=location.protocol==='https:'?'wss:':'ws:';
+  var ws=new WebSocket(proto+'//'+location.host+'/ws/gestures');
+
+  ws.onopen=function(){
+    document.getElementById('dot').classList.add('on');
+    document.getElementById('ws-txt').textContent='Connected · listening for gestures';
+  };
+  ws.onclose=function(){
+    document.getElementById('dot').classList.remove('on');
+    document.getElementById('ws-txt').textContent='Disconnected — reconnecting…';
+    setTimeout(connect,2000);
+  };
+  ws.onmessage=function(ev){
+    try{
+      var d=JSON.parse(ev.data);
+      if(d.type!=='gesture')return;
+      var g=d.gesture||'unknown';
+      var action=d.action||'';
+      var conf=d.confidence||0;
+      var mode=d.mode||'normal';
+      var isSeq=d.is_sequence||false;
+      flash(g,action,conf,mode,isSeq);
+      addLog(g,action,conf,mode,isSeq);
+    }catch(e){}
+  };
+}
+connect();
+</script>
+</body>
+</html>"""
+    return HTMLResponse(html)
+
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
@@ -330,6 +574,44 @@ async def llm_cache_invalidate():
         raise HTTPException(503, "Router not initialised")
     await _assistant._router.invalidate_cache()
     return {"status": "cache cleared"}
+
+
+# ── Weather ───────────────────────────────────────────────────────
+
+_weather_cache: dict = {}
+_weather_cache_ts: float = 0.0
+
+@app.get("/api/weather/current")
+async def get_weather_current():
+    """Return current weather for the configured or default location."""
+    global _weather_cache, _weather_cache_ts
+    now = time.time()
+    if _weather_cache and now - _weather_cache_ts < 600:
+        return _weather_cache
+    try:
+        from skills.weather import WeatherSkill
+        cfg_obj = get_config()
+        location = getattr(cfg_obj, 'preferred_weather_location', None) or "Chennai,IN"
+        skill = WeatherSkill()
+        data = await skill.run(location=location, units="metric", forecast_days=0, include_aqi=False)
+        cur = data.get("current", {})
+        result = {
+            "city": cur.get("location", location).split(",")[0].strip(),
+            "region": cur.get("location", "").split(",")[1].strip() if "," in cur.get("location", "") else "",
+            "temp_c": cur.get("temp", "--").replace("°C", "").strip(),
+            "humidity": cur.get("humidity", "--").replace("%", "").strip(),
+            "wind_kph": cur.get("wind_speed", "--").replace(" m/s", "").strip(),
+            "wind_dir": "",
+            "pressure_mb": cur.get("pressure", "--").replace(" hPa", "").strip(),
+            "vis_km": cur.get("visibility", "--").replace(" m", "").strip(),
+            "condition": cur.get("description", "--"),
+            "source": data.get("source", "weather"),
+        }
+        _weather_cache = result
+        _weather_cache_ts = now
+        return result
+    except Exception as e:
+        return {"error": str(e), "city": "--", "temp_c": "--", "condition": "--"}
 
 
 # ── Chat ──────────────────────────────────────────────────────────
@@ -490,6 +772,76 @@ async def ws_autonomy(websocket: WebSocket):
         logger.debug(f"Autonomy WS error: {e}")
     finally:
         _assistant.autonomy.unsubscribe(q)
+
+
+@app.websocket("/ws/gestures")
+async def ws_gestures(websocket: WebSocket):
+    """
+    Stream live gesture events to the frontend HUD.
+
+    Messages pushed to the client::
+
+        {"type": "gesture", "gesture": "thumbs_up", "action": "increase_volume",
+         "confidence": 0.92, "is_sequence": false, "ts": 1234567890.0}
+        {"type": "status",  "enabled": true, "cursor_mode": false}
+        {"type": "heartbeat", "ts": ...}
+    """
+    await websocket.accept()
+    logger.info("Gesture WS connected")
+
+    q: asyncio.Queue = asyncio.Queue(maxsize=64)
+    _gesture_ws_subscribers.append(q)
+
+    # Send initial status
+    gc = _gesture_controller
+    await websocket.send_json({
+        "type": "status",
+        "enabled": gc is not None and gc.running,
+        "cursor_mode": gc.cursor_mode if gc else False,
+    })
+
+    try:
+        while True:
+            try:
+                payload = await asyncio.wait_for(q.get(), timeout=20)
+                # Augment with cursor_mode state
+                if gc:
+                    payload["cursor_mode"] = gc.cursor_mode
+                await websocket.send_json(payload)
+            except asyncio.TimeoutError:
+                await websocket.send_json({"type": "heartbeat", "ts": time.time()})
+    except WebSocketDisconnect:
+        logger.info("Gesture WS disconnected")
+    except Exception as e:
+        logger.debug(f"Gesture WS error: {e}")
+    finally:
+        try:
+            _gesture_ws_subscribers.remove(q)
+        except ValueError:
+            pass
+
+
+# ── Gesture REST ─────────────────────────────────────────────────
+
+@app.get("/api/gestures/status")
+async def gesture_status():
+    """Return gesture controller status and gesture mapping table."""
+    gc = _gesture_controller
+    if not gc:
+        return {"enabled": False, "cursor_mode": False, "stats": {}, "mappings": []}
+    mappings = []
+    for gesture, cfg_item in gc._mapper._mappings.items():
+        mappings.append({
+            "gesture": gesture,
+            "action": cfg_item.get("action"),
+            "description": cfg_item.get("description", ""),
+        })
+    return {
+        "enabled": gc.running,
+        "cursor_mode": gc.cursor_mode,
+        "stats": gc.stats,
+        "mappings": mappings,
+    }
 
 
 # ── Autonomy REST ─────────────────────────────────────────────────
@@ -1339,6 +1691,8 @@ async def ws_computer(websocket: WebSocket):
 @app.get("/api/storage/status")
 async def storage_status():
     """Storage tier status and disk usage."""
+    if not _assistant:
+        raise HTTPException(503, "Assistant not initialised")
     return _assistant.storage.status()
 
 

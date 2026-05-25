@@ -28,7 +28,10 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 import time
 
-from gesture.gesture_engine.landmark_processor import HandState, distance, THUMB_TIP, INDEX_TIP
+from gesture.gesture_engine.landmark_processor import (
+    HandState, distance,
+    THUMB_TIP, INDEX_TIP, PINKY_TIP, WRIST,
+)
 
 
 GESTURE_NAMES = [
@@ -41,6 +44,10 @@ GESTURE_NAMES = [
     "ok",
     "three",
     "four",
+    "pinch",
+    "call_me",
+    "rock_on",
+    "gun",
     "swipe_left",
     "swipe_right",
     "swipe_up",
@@ -70,9 +77,11 @@ class GestureDetector:
     """
 
     # Fine-tune thresholds here without touching gesture logic
-    _PINCH_DIST     = 0.06   # thumb–index distance for "ok" sign
-    _SWIPE_MIN_VEL  = 0.012  # normalised units / frame for swipe detection
-    _SWIPE_FRAMES   = 6      # number of frames to check for swipe
+    _PINCH_DIST      = 0.06   # thumb–index distance for "ok" / pure pinch
+    _CALL_ME_DIST    = 0.08   # kept for future use
+    _SWIPE_MIN_VEL   = 0.020  # raised from 0.012 — prevents tremor/reposition triggering swipes
+    _SWIPE_FRAMES    = 6      # number of frames to check for swipe
+    _GUN_MIN_DIST    = 0.14   # thumb–index spread required for a real "gun" shape
 
     def detect(
         self,
@@ -93,6 +102,11 @@ class GestureDetector:
                 return GestureResult(swipe, 0.85, metadata={"history_len": len(wrist_history)})
 
         # -- Static gestures (order matters: specific before general) --
+
+        # Pinch (no other fingers extended) — must come before ok
+        if self._is_pinch(state):
+            return GestureResult("pinch", 0.88)
+
         if self._is_ok(state):
             return GestureResult("ok", 0.90)
 
@@ -102,8 +116,21 @@ class GestureDetector:
         if self._is_thumbs_down(state, pattern):
             return GestureResult("thumbs_down", 0.90)
 
+        # pointing checked BEFORE gun: index-only gesture must not accidentally
+        # trigger lock_screen when the thumb is just barely above threshold
         if self._is_pointing(pattern):
             return GestureResult("pointing", 0.93)
+
+        # gun requires a clear spread between thumb tip and index tip so that
+        # normal pointing (thumb slightly out) cannot accidentally fire lock_screen
+        if self._is_gun(state, pattern):
+            return GestureResult("gun", 0.87)
+
+        if self._is_call_me(pattern):
+            return GestureResult("call_me", 0.88)
+
+        if self._is_rock_on(pattern):
+            return GestureResult("rock_on", 0.87)
 
         if self._is_peace(pattern):
             return GestureResult("peace", 0.91)
@@ -169,6 +196,38 @@ class GestureDetector:
             return False
         # Thumb tip below wrist (larger y)
         return state.raw.landmarks[4][1] > state.raw.landmarks[0][1] + 0.05
+
+    @staticmethod
+    def _is_gun(state: HandState, pattern: tuple) -> bool:
+        """Thumb + index extended like a finger gun, others folded.
+        Also requires thumb tip and index tip to be spread far apart
+        (real gun shape) so accidental triggers during pointing are prevented."""
+        t, i, m, r, p = pattern
+        if not (t and i and not m and not r and not p):
+            return False
+        lm = state.raw.landmarks
+        spread = distance(lm, THUMB_TIP, INDEX_TIP)
+        return spread >= GestureDetector._GUN_MIN_DIST
+
+    @staticmethod
+    def _is_call_me(pattern: tuple) -> bool:
+        """Thumb + pinky extended ('hang loose' / phone sign), index/middle/ring folded."""
+        t, i, m, r, p = pattern
+        return t and not i and not m and not r and p
+
+    @staticmethod
+    def _is_rock_on(pattern: tuple) -> bool:
+        """Index + pinky extended ('rock on' / horns), middle/ring folded."""
+        t, i, m, r, p = pattern
+        return i and not m and not r and p
+
+    @staticmethod
+    def _is_pinch(state: HandState) -> bool:
+        """Thumb + index close together, all other fingers folded (pure pinch — no ok)."""
+        lm = state.raw.landmarks
+        dist = distance(lm, THUMB_TIP, INDEX_TIP)
+        _, _, m, r, p = state.finger_pattern
+        return dist < GestureDetector._PINCH_DIST and not m and not r and not p
 
     @staticmethod
     def _is_ok(state: HandState) -> bool:

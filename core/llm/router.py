@@ -35,8 +35,10 @@ from core.llm.circuit_breaker import CircuitBreaker, CircuitOpenError, RateLimit
 from core.llm.health import ProviderHealth
 from core.llm.providers import (
     ClaudeProvider,
+    CerebrasProvider,
     GeminiProvider,
     GoogleKeyPool,
+    GroqProvider,
     OllamaProvider,
     OpenAIProvider,
     ProviderError,
@@ -109,6 +111,24 @@ class LLMRouter:
 
         priority = 0
 
+        # Groq — fastest, goes first
+        if cfg.groq_api_key:
+            self._slots.append(_ProviderSlot(
+                "groq",
+                GroqProvider(cfg.groq_api_key),
+                priority,
+            ))
+            priority += 1
+
+        # Cerebras — second fastest
+        if cfg.cerebras_api_key:
+            self._slots.append(_ProviderSlot(
+                "cerebras",
+                CerebrasProvider(cfg.cerebras_api_key),
+                priority,
+            ))
+            priority += 1
+
         if cfg.openai_api_key:
             self._slots.append(_ProviderSlot(
                 "openai",
@@ -158,6 +178,24 @@ class LLMRouter:
             priority,
         ))
 
+        preferred = [
+            cfg.javris_primary_model,
+            "groq",
+            "cerebras",
+            "openai",
+            "gemini",
+            "claude",
+            "ollama",
+        ]
+        ordered_names = []
+        for name in preferred:
+            if name not in ordered_names:
+                ordered_names.append(name)
+        priority_map = {name: idx for idx, name in enumerate(ordered_names)}
+        for slot in self._slots:
+            slot.priority = priority_map.get(slot.name, len(priority_map))
+        self._slots.sort(key=lambda s: s.priority)
+
         self._ready = True
         names = [s.name for s in self._slots]
         logger.info(f"LLMRouter ready — providers: {names}")
@@ -167,7 +205,11 @@ class LLMRouter:
     def _ranked_slots(self) -> List[_ProviderSlot]:
         """Return available slots sorted by UCB1 score (desc)."""
         available = [s for s in self._slots if s.available]
-        return sorted(available, key=lambda s: s.ucb1_score(), reverse=True)
+        return sorted(
+            available,
+            key=lambda s: (s.ucb1_score(), -s.priority),
+            reverse=True,
+        )
 
     # ── Single provider call ──────────────────────────────────────
 
@@ -188,6 +230,12 @@ class LLMRouter:
             if slot.name == "claude":
                 return await slot.provider.chat(
                     messages, system, max_tokens,
+                    tool_dispatch=self._tool_dispatch,
+                )
+            if slot.name in ("groq", "cerebras", "openai") and self._tools and self._tool_dispatch:
+                return await slot.provider.chat(
+                    messages, system, max_tokens,
+                    tools=self._tools,
                     tool_dispatch=self._tool_dispatch,
                 )
             return await slot.provider.chat(messages, system, max_tokens)
@@ -238,7 +286,7 @@ class LLMRouter:
         Returns (text, tokens, winner_name).
         Cancels the losing task immediately.
         """
-        top  = slots[:2]
+        top = slots[:2]
         rest = slots[2:]
 
         tasks = {
@@ -255,14 +303,11 @@ class LLMRouter:
             )
             winner_task = done.pop()
 
-            # Cancel all still-pending losers
-            for t in pending:
-                t.cancel()
-
             # A task that was externally cancelled has no result/exception — skip it
             if winner_task.cancelled():
                 del tasks[winner_task]
-                # Drain losers and propagate cancellation upward
+                for t in pending:
+                    t.cancel()
                 if pending:
                     await asyncio.gather(*pending, return_exceptions=True)
                 raise asyncio.CancelledError()
@@ -270,37 +315,40 @@ class LLMRouter:
             exc = winner_task.exception()
             if exc is None:
                 text, tokens = winner_task.result()
-                winner_name  = tasks[winner_task].name
+                # Reject suspiciously short responses (rate-limit error bleed-through)
+                if tokens < 5 and text and len(text.strip()) < 20:
+                    logger.warning(f"[{tasks[winner_task].name}] response too short ({tokens} tok) — treating as failure")
+                    del tasks[winner_task]
+                    continue
+                winner_name = tasks[winner_task].name
+                for t in pending:
+                    t.cancel()
                 # Drain losers so they don't leak
                 if pending:
                     await asyncio.gather(*pending, return_exceptions=True)
                 return text, tokens, winner_name
 
-            # Winner failed — drain ALL remaining tasks (pending losers +
-            # any other tasks that landed in `done` simultaneously), then
-            # try rest sequentially
+            logger.debug(f"[{tasks[winner_task].name}] hedged request failed: {exc}")
             del tasks[winner_task]
-            remaining = list(tasks.keys())
-            for t in remaining:
-                if not t.done():
-                    t.cancel()
-            if remaining:
-                await asyncio.gather(*remaining, return_exceptions=True)
-            tasks.clear()   # exit while loop after rest attempt
+            continue
 
-            for slot in rest:
-                if not slot.available:
+        for slot in rest:
+            if not slot.available:
+                continue
+            try:
+                # Shield from outer cancellation so Ollama gets a fair shot
+                text, tokens = await asyncio.shield(
+                    self._call_slot(slot, messages, system, max_tokens)
+                )
+                if tokens < 5 and text and len(text.strip()) < 20:
+                    logger.warning(f"[{slot.name}] waterfall response too short ({tokens} tok) — skipping")
                     continue
-                try:
-                    # Shield from outer cancellation so Ollama gets a fair shot
-                    text, tokens = await asyncio.shield(
-                        self._call_slot(slot, messages, system, max_tokens)
-                    )
-                    return text, tokens, slot.name
-                except asyncio.CancelledError:
-                    raise   # genuine cancellation — propagate
-                except Exception:
-                    continue
+                return text, tokens, slot.name
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.debug(f"[{slot.name}] fallback request failed: {e}")
+                continue
 
         raise ProviderError("all", "All providers failed")
 
@@ -385,7 +433,10 @@ class LLMRouter:
                 continue
             t0 = time.monotonic()
             try:
-                async for chunk in slot.provider.stream(messages, system, max_tokens):
+                stream_kwargs = {}
+                if slot.name == "claude" and self._tools and self._tool_dispatch:
+                    stream_kwargs["tool_dispatch"] = self._tool_dispatch
+                async for chunk in slot.provider.stream(messages, system, max_tokens, **stream_kwargs):
                     full_text += chunk
                     yield chunk
                 # Success
@@ -411,12 +462,13 @@ class LLMRouter:
                 logger.warning(f"[{slot.name}] stream failed: {e}")
 
         if not full_text:
-            yield "I'm having trouble reaching my AI backend right now."
+            yield await self.chat(messages, system, max_tokens=max_tokens)
 
     # ── Monitoring ────────────────────────────────────────────────
 
     def health_report(self) -> dict:
         """Returns a dict suitable for /api/llm/health."""
+        routing_order = [s.name for s in self._ranked_slots()]
         return {
             "providers": [
                 {
@@ -428,7 +480,8 @@ class LLMRouter:
                 for s in self._slots
             ],
             "cache": self._cache.stats(),
-            "routing_order": [s.name for s in self._ranked_slots()],
+            "routing_order": routing_order,
+            "active_provider": routing_order[0] if routing_order else "",
         }
 
     async def invalidate_cache(self) -> None:

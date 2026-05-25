@@ -70,28 +70,199 @@ class SystemControlSkill(BaseSkill):
 
     async def _open_app(self, app_name: str) -> dict:
         loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._open_app_sync, app_name)
 
-        def _open():
+    def _open_app_sync(self, app_name: str) -> dict:
+        if SYSTEM == "Windows":
             try:
-                if SYSTEM == "Windows":
-                    os.startfile(app_name)
-                elif SYSTEM == "Darwin":
-                    subprocess.Popen(["open", "-a", app_name])
-                else:
-                    # Linux: try as command, then as desktop app via gtk-launch
-                    try:
-                        subprocess.Popen([app_name], start_new_session=True)
-                    except FileNotFoundError:
-                        subprocess.Popen(
-                            ["gtk-launch", app_name],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
+                os.startfile(app_name)
                 return {"success": True, "app": app_name}
             except Exception as e:
                 return {"success": False, "error": str(e)}
 
-        return await loop.run_in_executor(None, _open)
+        if SYSTEM == "Darwin":
+            try:
+                subprocess.Popen(["open", "-a", app_name])
+                return {"success": True, "app": app_name}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        # ── Linux ───────────────────────────────────────────────
+        # If it looks like a URL or file path, delegate to xdg-open
+        if app_name.startswith(("http://", "https://", "/", "~", ".")):
+            try:
+                subprocess.Popen(
+                    ["xdg-open", app_name],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                return {"success": True, "app": app_name, "method": "xdg-open"}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        key = app_name.lower().strip()
+
+        # Strategy 1 — normalise human name to known command
+        normalized = _LINUX_APP_MAP.get(key)
+        if normalized:
+            result = _try_launch_command(normalized)
+            if result["success"]:
+                return result
+
+        # Strategy 2 — try the name directly as a command
+        result = _try_launch_command(key)
+        if result["success"]:
+            return result
+
+        # Strategy 3 — search .desktop files for a fuzzy name match
+        desktop_cmd = _find_desktop_exec(key)
+        if desktop_cmd:
+            result = _try_launch_command(desktop_cmd)
+            if result["success"]:
+                return {**result, "app": app_name}
+
+        # Strategy 4 — gtk-launch with desktop file stem (last resort)
+        try:
+            proc = subprocess.run(
+                ["gtk-launch", key],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                timeout=5,
+            )
+            if proc.returncode == 0:
+                return {"success": True, "app": app_name, "method": "gtk-launch"}
+            err = proc.stderr.decode(errors="replace").strip()
+        except Exception as e:
+            err = str(e)
+
+        return {
+            "success": False,
+            "error": (
+                f"Could not open '{app_name}'. "
+                f"Try the exact command name (e.g. 'firefox', 'nautilus'). {err}"
+            ),
+        }
+
+
+# ── Linux helpers ────────────────────────────────────────────────
+
+# Human name → actual command mapping for common Ubuntu apps
+_LINUX_APP_MAP: dict[str, str] = {
+    # Browsers
+    "chrome": "google-chrome-stable",
+    "google chrome": "google-chrome-stable",
+    "chromium": "chromium-browser",
+    "firefox": "firefox",
+    "edge": "microsoft-edge",
+    # Files / Nautilus
+    "files": "nautilus",
+    "file manager": "nautilus",
+    "nautilus": "nautilus",
+    "nemo": "nemo",
+    # Terminal
+    "terminal": "gnome-terminal",
+    "console": "gnome-terminal",
+    "bash": "gnome-terminal",
+    # Text editors
+    "text editor": "gedit",
+    "notepad": "gedit",
+    "gedit": "gedit",
+    "kate": "kate",
+    "code": "code",
+    "vs code": "code",
+    "vscode": "code",
+    # Calculator
+    "calculator": "gnome-calculator",
+    "calc": "gnome-calculator",
+    # Settings
+    "settings": "gnome-control-center",
+    "system settings": "gnome-control-center",
+    "control panel": "gnome-control-center",
+    # Media
+    "vlc": "vlc",
+    "media player": "vlc",
+    "videos": "totem",
+    "music": "rhythmbox",
+    "spotify": "spotify",
+    # Images
+    "photos": "eog",
+    "image viewer": "eog",
+    "gimp": "gimp",
+    # Office
+    "libreoffice": "libreoffice",
+    "writer": "libreoffice --writer",
+    "calc office": "libreoffice --calc",
+    "impress": "libreoffice --impress",
+    # System
+    "task manager": "gnome-system-monitor",
+    "system monitor": "gnome-system-monitor",
+    "disk": "gnome-disks",
+    "bluetooth": "gnome-bluetooth",
+    "network": "nm-connection-editor",
+    # Misc
+    "screenshot": "gnome-screenshot",
+    "calendar": "gnome-calendar",
+    "clock": "gnome-clocks",
+    "contacts": "gnome-contacts",
+}
+
+
+def _try_launch_command(cmd: str) -> dict:
+    """Try to launch a command; return success/failure without raising."""
+    import shutil
+    # Handle commands with arguments (e.g. "libreoffice --writer")
+    parts = cmd.split()
+    binary = parts[0]
+    if not shutil.which(binary):
+        return {"success": False, "error": f"'{binary}' not found in PATH"}
+    try:
+        subprocess.Popen(
+            parts,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return {"success": True, "app": cmd, "method": "command"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def _find_desktop_exec(name: str) -> str | None:
+    """
+    Search .desktop files in standard locations for one whose Name= matches
+    the query (case-insensitive, substring). Returns the Exec= command or None.
+    """
+    import glob as _glob
+    import re
+
+    search_dirs = [
+        "/usr/share/applications",
+        "/usr/local/share/applications",
+        str(Path.home() / ".local/share/applications"),
+        "/var/lib/flatpak/exports/share/applications",
+        str(Path.home() / ".local/share/flatpak/exports/share/applications"),
+    ]
+
+    for d in search_dirs:
+        for desktop_file in _glob.glob(f"{d}/*.desktop"):
+            try:
+                content = Path(desktop_file).read_text(errors="replace")
+                # Look for Name= line matching our query
+                name_match = re.search(r"^Name=(.+)$", content, re.MULTILINE)
+                if not name_match:
+                    continue
+                app_label = name_match.group(1).strip().lower()
+                if name not in app_label and app_label not in name:
+                    continue
+                # Found a match — extract Exec= and strip field codes (%u %f etc.)
+                exec_match = re.search(r"^Exec=(.+)$", content, re.MULTILINE)
+                if exec_match:
+                    cmd = re.sub(r"\s*%[a-zA-Z]", "", exec_match.group(1)).strip()
+                    return cmd
+            except Exception:
+                continue
+    return None
 
     async def _screenshot(self, _: str = "") -> dict:
         loop = asyncio.get_event_loop()
@@ -183,7 +354,7 @@ class SystemControlSkill(BaseSkill):
                 import psutil
                 cpu = psutil.cpu_percent(interval=1)
                 mem = psutil.virtual_memory()
-                disk = psutil.disk_usage("/")
+                disk = psutil.disk_usage("C:\\" if SYSTEM == "Windows" else "/")
                 return {
                     "platform": platform.platform(),
                     "cpu_percent": cpu,

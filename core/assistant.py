@@ -123,6 +123,11 @@ class Assistant:
         from skills.notion import NotionSkill
         from skills.obsidian import ObsidianSkill
         from skills.email_skill import EmailSkill
+        from skills.system.wifi import WiFiSkill
+        from skills.system.bluetooth import BluetoothSkill
+        from skills.system.audio import AudioSkill
+        from skills.system.notify import NotifySkill
+        from skills.system.brightness import BrightnessSkill
 
         skill_classes = [
             WebSearchSkill,
@@ -145,6 +150,12 @@ class Assistant:
             NotionSkill,
             ObsidianSkill,
             EmailSkill,
+            # Ubuntu/Linux system skills
+            WiFiSkill,
+            BluetoothSkill,
+            AudioSkill,
+            NotifySkill,
+            BrightnessSkill,
         ]
 
         for cls in skill_classes:

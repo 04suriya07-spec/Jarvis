@@ -1,0 +1,16 @@
+{
+  "name": "desktop_app",
+  "version": "1.0.0",
+  "description": "Javris Transparent Desktop HUD",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "electron": "^30.0.0"
+  }
+}

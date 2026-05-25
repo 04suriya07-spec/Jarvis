@@ -121,24 +121,34 @@ class LandmarkProcessor:
 
         return FingerState(extended=extended, curl_ratio=curl)
 
+    # Minimum displacement (normalised) for thumb tip vs IP joint.
+    # Direction-based checks (tip_x < ip_x etc.) break when the camera
+    # frame is flipped before MediaPipe — the handedness label gets
+    # inverted so left/right logic fires in the wrong direction.
+    # Using absolute distance on both axes avoids this entirely:
+    #   horiz spread  → open palm / four distinction
+    #   vert spread   → thumbs up / down
+    _THUMB_MIN_EXTENSION: float = 0.04
+
     @staticmethod
     def _thumb_state(
         lm: List[Tuple[float, float, float]],
         handedness: str,
     ) -> FingerState:
         """
-        Thumb extension is evaluated using horizontal displacement
-        (left/right) rather than vertical, since the thumb lies sideways.
-        For a right hand the tip x > IP x when extended outward.
+        Thumb extension via absolute displacement from IP joint.
+        Works correctly for both hands on a horizontally-flipped frame.
         """
         tip_x = lm[THUMB_TIP][0]
         ip_x  = lm[THUMB_IP][0]
+        tip_y = lm[THUMB_TIP][1]
+        ip_y  = lm[THUMB_IP][1]
         mcp_x = lm[THUMB_MCP][0]
 
-        if handedness == "Right":
-            extended = tip_x < ip_x          # tip further left than IP
-        else:
-            extended = tip_x > ip_x          # tip further right than IP
+        thresh = LandmarkProcessor._THUMB_MIN_EXTENSION
+        horiz = abs(tip_x - ip_x) > thresh   # sideways — open palm vs four
+        vert  = abs(tip_y - ip_y) > thresh   # up/down — thumbs up/down
+        extended = horiz or vert
 
         span  = abs(mcp_x - ip_x) + 1e-6
         curl  = max(0.0, min(1.0, abs(tip_x - ip_x) / span))

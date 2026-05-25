@@ -42,8 +42,8 @@ class FinanceSkill(BaseSkill):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["quote", "company", "forex", "crypto", "macro", "sentiment"],
-                    "description": "What to fetch",
+                    "enum": ["quote", "price", "company", "forex", "crypto", "macro", "sentiment"],
+                    "description": "What to fetch. Use 'quote' or 'price' for stock price.",
                     "default": "quote",
                 },
                 "symbol": {
@@ -64,7 +64,7 @@ class FinanceSkill(BaseSkill):
     async def run(self, action: str = "quote", symbol: str = "", indicator: str = "GDP", **_) -> dict:
         symbol = symbol.upper().strip()
 
-        if action == "quote":
+        if action in ("quote", "price"):
             return await self._quote(symbol)
         elif action == "company":
             return await self._company(symbol)

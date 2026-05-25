@@ -89,8 +89,11 @@ dependencies = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
 
-    # Wake word (optional — set PORCUPINE_API_KEY in .env)
-    # "pvporcupine>=3.0.0",
+    # Integrations
+    "spotipy>=2.23.0",
+
+    # Wake word
+    "pvporcupine>=3.0.0",
 ]
 
 [project.scripts]

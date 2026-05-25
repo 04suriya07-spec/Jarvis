@@ -86,13 +86,15 @@ class BrowserSkill(BaseSkill):
     async def run(self, action: str, **kwargs) -> Any:
         handlers = {
             "recent_history": self._recent_history,
+            "history": self._recent_history,          # alias
             "search_history": self._search_history,
             "open_url": self._open_url,
             "summarise_page": self._summarise_page,
+            "summarize_page": self._summarise_page,   # alias
         }
         fn = handlers.get(action)
         if not fn:
-            return {"error": f"Unknown action: {action}"}
+            return {"error": f"Unknown action: {action}. Valid: recent_history, search_history, open_url, summarise_page"}
         return await fn(**kwargs)
 
     async def _recent_history(self, hours: int = 24, limit: int = 20, **_) -> list[dict]:

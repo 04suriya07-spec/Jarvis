@@ -1,0 +1,21 @@
+[Unit]
+Description=Javris Personal AI Assistant
+After=network-online.target sound.target bluetooth.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=JAVRIS_DIR
+ExecStart=JAVRIS_DIR/.venv/bin/python main.py serve --voice
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Environment
+Environment=DISPLAY=:0
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
+EnvironmentFile=JAVRIS_DIR/.env
+
+[Install]
+WantedBy=default.target

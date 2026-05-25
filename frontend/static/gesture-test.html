@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Javris — Gesture Test</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:#050810;color:#e0e8ff;font-family:'Segoe UI',monospace;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:30px 20px;}
+  h1{font-size:22px;letter-spacing:4px;color:#00d4ff;margin-bottom:6px;text-transform:uppercase;}
+  .sub{font-size:11px;color:rgba(255,255,255,.35);letter-spacing:2px;margin-bottom:20px;}
+  .status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#333;margin-right:6px;vertical-align:middle;transition:background .3s;}
+  .status-dot.on{background:#00d4ff;box-shadow:0 0 8px #00d4ff;}
+  #ws-status{font-size:11px;letter-spacing:1px;color:rgba(255,255,255,.4);margin-bottom:24px;}
+
+  #mode-badge{
+    padding:6px 22px;border-radius:20px;font-size:12px;letter-spacing:3px;text-transform:uppercase;margin-bottom:22px;
+    background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.4);color:#00d4ff;transition:all .2s;
+  }
+  #mode-badge.cursor{background:rgba(0,200,255,.14);border-color:rgba(0,200,255,.7);color:#00c8ff;}
+  #mode-badge.scroll{background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.6);color:#10b981;}
+
+  #gesture-now{
+    width:440px;padding:30px 20px;text-align:center;
+    background:rgba(0,212,255,.03);border:1px solid rgba(0,212,255,.15);
+    border-radius:14px;margin-bottom:22px;transition:all .15s;
+  }
+  #gesture-now.active{background:rgba(0,212,255,.10);border-color:rgba(0,212,255,.8);box-shadow:0 0 40px rgba(0,212,255,.18);}
+  #gname{font-size:48px;font-weight:700;color:#00d4ff;letter-spacing:2px;text-transform:uppercase;min-height:60px;transition:all .1s;}
+  #gaction{font-size:13px;color:rgba(255,255,255,.5);letter-spacing:2px;margin-top:8px;min-height:20px;}
+  #gconf-wrap{margin-top:16px;height:6px;border-radius:3px;background:rgba(255,255,255,.07);overflow:hidden;}
+  #gconf-bar{height:100%;background:#00d4ff;border-radius:3px;width:0%;transition:width .15s;box-shadow:0 0 8px #00d4ff;}
+  #gconf-pct{font-size:10px;color:rgba(255,255,255,.25);margin-top:5px;letter-spacing:1px;}
+
+  .stats{display:flex;gap:16px;margin-bottom:24px;}
+  .stat{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:12px 22px;text-align:center;}
+  .stat .n{font-size:30px;font-weight:700;color:#00d4ff;}
+  .stat .l{font-size:9px;letter-spacing:2px;color:rgba(255,255,255,.3);margin-top:3px;text-transform:uppercase;}
+
+  #log{width:440px;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:14px;max-height:300px;overflow-y:auto;margin-bottom:24px;}
+  #log-title{font-size:9px;letter-spacing:3px;color:rgba(255,255,255,.25);text-transform:uppercase;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.06);}
+  .log-entry{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:12px;}
+  .log-entry:last-child{border-bottom:none;}
+  .log-time{color:rgba(255,255,255,.22);min-width:50px;font-size:10px;padding-top:2px;}
+  .log-badge{padding:2px 8px;border-radius:4px;font-size:9px;letter-spacing:1px;text-transform:uppercase;min-width:58px;text-align:center;font-weight:700;}
+  .log-badge.normal{background:rgba(0,212,255,.14);color:#00d4ff;}
+  .log-badge.cursor{background:rgba(0,200,255,.14);color:#00c8ff;}
+  .log-badge.scroll{background:rgba(16,185,129,.14);color:#10b981;}
+  .log-badge.seq{background:rgba(255,200,0,.14);color:#ffc800;}
+  .log-text{color:rgba(255,255,255,.7);flex:1;line-height:1.5;}
+  .log-conf{color:rgba(255,255,255,.22);font-size:10px;}
+
+  #cheatsheet{width:440px;}
+  #cheatsheet h3{font-size:9px;letter-spacing:3px;color:rgba(255,255,255,.22);text-transform:uppercase;margin-bottom:10px;}
+  .gs-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+  .gs-item{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:8px 12px;}
+  .gs-item .gn{font-size:11px;color:#00d4ff;font-weight:600;margin-bottom:2px;}
+  .gs-item .ga{font-size:10px;color:rgba(255,255,255,.4);}
+  .gs-item.hit{border-color:rgba(0,212,255,.6);background:rgba(0,212,255,.07);}
+</style>
+</head>
+<body>
+<h1>Javris · Gesture Test</h1>
+<div class="sub">Open palm · Fist · Swipe · Cursor · Scroll — all in real time</div>
+
+<div id="ws-status"><span class="status-dot" id="dot"></span><span id="ws-txt">Connecting to gesture engine…</span></div>
+
+<div id="mode-badge" id="mode-badge">● NORMAL MODE</div>
+
+<div id="gesture-now">
+  <div id="gname">—</div>
+  <div id="gaction">Make a gesture in front of your webcam</div>
+  <div id="gconf-wrap"><div id="gconf-bar"></div></div>
+  <div id="gconf-pct">confidence: —</div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="n" id="st-total">0</div><div class="l">Detected</div></div>
+  <div class="stat"><div class="n" id="st-actions">0</div><div class="l">Actions fired</div></div>
+  <div class="stat"><div class="n" id="st-last">—</div><div class="l">Last conf %</div></div>
+</div>
+
+<div id="log">
+  <div id="log-title">Live Event Log</div>
+</div>
+
+<div id="cheatsheet">
+  <h3>Gesture Map — green border = tested ✓</h3>
+  <div class="gs-grid">
+    <div class="gs-item" id="gs-open_palm"><div class="gn">Open Palm</div><div class="ga">Show / hide desktop</div></div>
+    <div class="gs-item" id="gs-closed_fist"><div class="gn">Closed Fist</div><div class="ga">Pause / play media</div></div>
+    <div class="gs-item" id="gs-thumbs_up"><div class="gn">Thumbs Up</div><div class="ga">Volume up (+5)</div></div>
+    <div class="gs-item" id="gs-thumbs_down"><div class="gn">Thumbs Down</div><div class="ga">Volume down (−5)</div></div>
+    <div class="gs-item" id="gs-peace"><div class="gn">Peace / V Sign</div><div class="ga">Take screenshot</div></div>
+    <div class="gs-item" id="gs-pointing"><div class="gn">Pointing (index)</div><div class="ga">Enter cursor mode</div></div>
+    <div class="gs-item" id="gs-three"><div class="gn">Three Fingers</div><div class="ga">Activate voice</div></div>
+    <div class="gs-item" id="gs-four"><div class="gn">Four Fingers</div><div class="ga">Alt+Tab</div></div>
+    <div class="gs-item" id="gs-ok"><div class="gn">OK Sign</div><div class="ga">Press Enter</div></div>
+    <div class="gs-item" id="gs-rock_on"><div class="gn">Rock On (\m/)</div><div class="ga">Enter scroll mode</div></div>
+    <div class="gs-item" id="gs-gun"><div class="gn">Finger Gun</div><div class="ga">Lock screen</div></div>
+    <div class="gs-item" id="gs-call_me"><div class="gn">Call Me</div><div class="ga">Open Javris chat</div></div>
+    <div class="gs-item" id="gs-swipe_left"><div class="gn">Swipe Left</div><div class="ga">Prev window</div></div>
+    <div class="gs-item" id="gs-swipe_right"><div class="gn">Swipe Right</div><div class="ga">Next window</div></div>
+    <div class="gs-item" id="gs-swipe_up"><div class="gn">Swipe Up</div><div class="ga">Scroll up</div></div>
+    <div class="gs-item" id="gs-swipe_down"><div class="gn">Swipe Down</div><div class="ga">Scroll down</div></div>
+  </div>
+</div>
+
+<script>
+var total=0, actionsFired=0;
+var tested={};
+
+function pad(n){return String(n).padStart(2,'0');}
+function ts(){var d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());}
+
+function flash(name,action,conf,mode,isSeq){
+  var cleanName=name.replace(/_/g,' ').toUpperCase();
+  document.getElementById('gname').textContent=cleanName;
+  document.getElementById('gaction').textContent=(isSeq?'⚡ SEQUENCE: ':'')+action;
+  document.getElementById('gconf-bar').style.width=Math.round(conf*100)+'%';
+  document.getElementById('gconf-pct').textContent='confidence: '+Math.round(conf*100)+'%';
+
+  var box=document.getElementById('gesture-now');
+  box.classList.add('active');
+  setTimeout(function(){box.classList.remove('active');},500);
+
+  var badge=document.getElementById('mode-badge');
+  var modeMap={normal:'● NORMAL MODE',cursor:'⊕  CURSOR MODE',scroll:'↕  SCROLL MODE'};
+  badge.textContent=modeMap[mode]||'● NORMAL MODE';
+  badge.className='';
+  if(mode==='cursor')badge.classList.add('cursor');
+  else if(mode==='scroll')badge.classList.add('scroll');
+
+  total++;
+  actionsFired++;
+  document.getElementById('st-total').textContent=total;
+  document.getElementById('st-actions').textContent=actionsFired;
+  document.getElementById('st-last').textContent=Math.round(conf*100);
+
+  // Mark tested in cheatsheet
+  if(!tested[name]){
+    tested[name]=1;
+    var el=document.getElementById('gs-'+name);
+    if(el)el.classList.add('hit');
+  }
+}
+
+function addLog(name,action,conf,mode,isSeq){
+  var log=document.getElementById('log');
+  var entry=document.createElement('div');
+  entry.className='log-entry';
+  var cls=isSeq?'seq':(mode||'normal');
+  entry.innerHTML=
+    '<span class="log-time">'+ts()+'</span>'+
+    '<span class="log-badge '+cls+'">'+(isSeq?'SEQ':mode.toUpperCase())+'</span>'+
+    '<div style="flex:1">'+
+      '<div class="log-text">'+name.replace(/_/g,' ')+(action?' → <strong>'+action+'</strong>':'')+'</div>'+
+      '<div class="log-conf">'+Math.round(conf*100)+'% confidence</div>'+
+    '</div>';
+  var title=document.getElementById('log-title');
+  title.after(entry);
+  var all=log.querySelectorAll('.log-entry');
+  if(all.length>40)all[all.length-1].remove();
+}
+
+function connect(){
+  var proto=location.protocol==='https:'?'wss:':'ws:';
+  var ws=new WebSocket(proto+'//'+location.host+'/ws/gestures');
+
+  ws.onopen=function(){
+    document.getElementById('dot').classList.add('on');
+    document.getElementById('ws-txt').textContent='Connected — gesture engine live';
+  };
+  ws.onclose=function(){
+    document.getElementById('dot').classList.remove('on');
+    document.getElementById('ws-txt').textContent='Disconnected — retrying…';
+    setTimeout(connect,2000);
+  };
+  ws.onerror=function(){
+    document.getElementById('ws-txt').textContent='Connection error — is the server running?';
+  };
+  ws.onmessage=function(ev){
+    try{
+      var d=JSON.parse(ev.data);
+      if(d.type!=='gesture')return;
+      flash(d.gesture||'unknown', d.action||'', d.confidence||0, d.mode||'normal', d.is_sequence||false);
+      addLog(d.gesture||'unknown', d.action||'', d.confidence||0, d.mode||'normal', d.is_sequence||false);
+    }catch(e){}
+  };
+}
+connect();
+</script>
+</body>
+</html>

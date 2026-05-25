@@ -1,0 +1,245 @@
+/* ════════════════════════════════════════════════════════════════
+   JAVRIS DESIGN SYSTEM — COLOR + TYPOGRAPHY TOKENS
+   ════════════════════════════════════════════════════════════════
+   Lifted directly from frontend/index.html in the Javris codebase.
+   Two layers:
+     1. Foundation tokens (palette, type ramp, spacing) — :root scope
+     2. Semantic mappings (fg/bg/accent roles, h1/h2/body roles)
+   ──────────────────────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* ── COLOR PALETTE ─────────────────────────────────────────── */
+  /* Deep-space backgrounds (5 levels of elevation) */
+  --color-bg:           #050810;  /* deepest void — page bg */
+  --color-surface-1:    #0b1120;  /* panel base */
+  --color-surface-2:    #101828;  /* card/input bg */
+  --color-surface-3:    #18243a;  /* hover/active state */
+  --color-surface-4:    #1f2d44;  /* highest elevation */
+
+  /* Borders + dividers */
+  --color-border:       #162035;
+  --color-border-soft:  rgba(0, 212, 255, 0.08);
+  --color-border-focus: rgba(0, 212, 255, 0.3);
+
+  /* Text (slate ramp on dark) */
+  --color-text:         #e2e8f0;  /* primary */
+  --color-text-muted:   #3d5878;  /* secondary, labels */
+  --color-text-inverse: #050810;  /* on bright accent fills */
+
+  /* Accents — the "HUD" palette */
+  --color-accent:       #00d4ff;  /* PRIMARY: arc-reactor cyan */
+  --color-accent-2:     #7c3aed;  /* purple — dev mode, gradient pair */
+  --color-accent-3:     #10b981;  /* green — success, online, trading mode */
+  --color-accent-4:     #f59e0b;  /* amber — warning, reconnecting */
+
+  /* Status colors */
+  --color-success:      #10b981;
+  --color-warning:      #f59e0b;
+  --color-danger:       #ef4444;
+  --color-info:         #00d4ff;
+
+  /* Mode-specific accent overrides (HUD repaints itself per mode) */
+  --mode-work:     #00d4ff;
+  --mode-trading:  #10b981;
+  --mode-dev:      #7c3aed;
+  --mode-research: #ec4899;
+  --mode-focus:    #f59e0b;
+  --mode-night:    #4f46e5;
+
+  /* Glow / aura tints (rgba so we can compose box-shadows) */
+  --glow-cyan:    rgba(0, 212, 255, 0.4);
+  --glow-cyan-strong: rgba(0, 212, 255, 0.6);
+  --glow-purple:  rgba(124, 58, 237, 0.4);
+  --glow-green:   rgba(16, 185, 129, 0.4);
+  --glow-amber:   rgba(245, 158, 11, 0.4);
+  --glow-red:     rgba(239, 68, 68, 0.5);
+
+  /* Grid background (the JARVIS scanline) */
+  --grid-line: rgba(0, 212, 255, 0.03);
+  --grid-size: 40px;
+
+  /* ── TYPOGRAPHY ────────────────────────────────────────────── */
+  /* Font families */
+  --font-display: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;  /* HUD wordmarks, labels */
+  --font-body:    'Manrope', 'Segoe UI', system-ui, sans-serif;   /* Body, UI chrome */
+  --font-mono:    'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace; /* Vitals, code */
+
+  /* Type scale (clamps for fluid sizing where applicable) */
+  --fs-9:   9px;    /* badges, tiny meta */
+  --fs-10:  10px;   /* labels, vitals */
+  --fs-11:  11px;   /* secondary copy */
+  --fs-12:  12px;   /* DEFAULT body in Javris UI */
+  --fs-13:  13px;   /* root body */
+  --fs-14:  14px;   /* emphasized body */
+  --fs-15:  15px;   /* brand wordmark in topbar */
+  --fs-18:  18px;   /* welcome screen heading */
+  --fs-20:  20px;   /* stat numbers */
+  --fs-24:  24px;
+  --fs-32:  32px;
+  --fs-48:  48px;   /* weather temperature, hero numerals */
+  --fs-64:  64px;
+
+  --fw-regular:  400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+  --fw-black:    800;
+  --fw-display:  900;
+
+  --lh-tight: 1.2;
+  --lh-snug:  1.4;
+  --lh-base:  1.6;
+  --lh-loose: 1.8;
+
+  /* Tracking — wide letter-spacing is the JARVIS signature */
+  --ls-display: 3px;     /* "JAVRIS" wordmark */
+  --ls-label:   1px;     /* uppercase section labels */
+  --ls-loose:   0.5px;   /* badges, small caps */
+  --ls-normal:  0;
+
+  /* ── SHAPE ─────────────────────────────────────────────────── */
+  --radius-xs:   3px;
+  --radius-sm:   5px;
+  --radius-md:   6px;
+  --radius-lg:   8px;
+  --radius-xl:   10px;   /* default panel radius */
+  --radius-2xl:  12px;   /* floating panels */
+  --radius-pill: 999px;
+
+  /* ── ELEVATION (glass + glow stack) ────────────────────────── */
+  --shadow-panel:  0 8px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,212,255,0.05);
+  --shadow-panel-focused: 0 12px 50px rgba(0,0,0,0.7), 0 0 0 1px rgba(0,212,255,0.15);
+  --shadow-glow:   0 0 12px var(--glow-cyan-strong);
+  --shadow-toast:  0 4px 20px rgba(0,0,0,0.5);
+
+  /* Glass / blur */
+  --blur-light:  blur(8px);
+  --blur-panel:  blur(12px);
+  --blur-strong: blur(16px);
+
+  /* ── SPACING (tight, terminal-dense) ───────────────────────── */
+  --space-0:  0;
+  --space-1:  2px;
+  --space-2:  4px;
+  --space-3:  6px;
+  --space-4:  8px;
+  --space-5:  10px;
+  --space-6:  12px;
+  --space-7:  14px;
+  --space-8:  16px;
+  --space-10: 20px;
+  --space-12: 24px;
+  --space-16: 32px;
+
+  /* ── MOTION ────────────────────────────────────────────────── */
+  --ease-out:  cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-instant: 100ms;
+  --dur-fast:    150ms;
+  --dur-base:    200ms;
+  --dur-slow:    300ms;
+  --dur-pulse:   1500ms;
+  --dur-hue:     8s;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SEMANTIC LAYER — what UI elements should look like
+   ════════════════════════════════════════════════════════════════ */
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: var(--fs-13);
+  line-height: var(--lh-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The grid background — applied via body::before in the product */
+.jv-grid-bg::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: var(--grid-size) var(--grid-size);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Headings ──────────────────────────────────────────────── */
+.jv-display, h1.jv {
+  font-family: var(--font-display);
+  font-size: var(--fs-32);
+  font-weight: var(--fw-black);
+  letter-spacing: var(--ls-display);
+  color: var(--color-accent);
+  text-transform: uppercase;
+  line-height: var(--lh-tight);
+}
+
+.jv-h1, h2.jv {
+  font-family: var(--font-display);
+  font-size: var(--fs-24);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-label);
+  color: var(--color-text);
+  text-transform: uppercase;
+}
+
+.jv-h2, h3.jv {
+  font-family: var(--font-body);
+  font-size: var(--fs-14);
+  font-weight: var(--fw-bold);
+  color: var(--color-text);
+  letter-spacing: var(--ls-loose);
+}
+
+/* The signature uppercase section label — used everywhere in HUD */
+.jv-label, .fl {
+  font-family: var(--font-body);
+  font-size: var(--fs-10);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+  color: var(--color-text-muted);
+}
+
+/* ── Body ──────────────────────────────────────────────────── */
+.jv-body, p.jv {
+  font-family: var(--font-body);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-regular);
+  color: var(--color-text);
+  line-height: var(--lh-base);
+}
+
+.jv-meta {
+  font-size: var(--fs-10);
+  color: var(--color-text-muted);
+  letter-spacing: var(--ls-loose);
+}
+
+/* Mono / vitals / code */
+.jv-mono, code.jv, .vc-val {
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+  color: var(--color-accent);
+  letter-spacing: var(--ls-normal);
+}
+
+/* The arc-reactor logo — conic-gradient + rotating hue */
+.jv-logo {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: conic-gradient(var(--color-accent), var(--color-accent-2), var(--color-accent));
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: var(--fw-display);
+  font-size: var(--fs-13);
+  color: #fff;
+  animation: jv-hue var(--dur-hue) linear infinite;
+}
+@keyframes jv-hue { to { filter: hue-rotate(360deg); } }

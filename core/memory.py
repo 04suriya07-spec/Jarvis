@@ -128,6 +128,43 @@ class LongTermMemory:
                 updated_at REAL
             );
 
+            CREATE TABLE IF NOT EXISTS episodes (
+                episode_id TEXT PRIMARY KEY,
+                title TEXT,
+                summary TEXT,
+                evidence_json TEXT,
+                created_at REAL
+            );
+
+            CREATE TABLE IF NOT EXISTS projects (
+                project_id TEXT PRIMARY KEY,
+                name TEXT,
+                root_path TEXT,
+                summary TEXT,
+                status TEXT,
+                updated_at REAL
+            );
+
+            CREATE TABLE IF NOT EXISTS project_tasks (
+                task_id TEXT PRIMARY KEY,
+                project_id TEXT,
+                title TEXT,
+                status TEXT,
+                priority TEXT,
+                evidence_json TEXT,
+                updated_at REAL,
+                FOREIGN KEY(project_id) REFERENCES projects(project_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS procedures (
+                procedure_id TEXT PRIMARY KEY,
+                name TEXT,
+                steps_json TEXT,
+                success_count INTEGER DEFAULT 0,
+                failure_count INTEGER DEFAULT 0,
+                updated_at REAL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_msg_session ON messages(session_id);
             CREATE INDEX IF NOT EXISTS idx_msg_ts ON messages(timestamp);
             CREATE INDEX IF NOT EXISTS idx_facts_cat ON facts(category);
@@ -157,7 +194,13 @@ class LongTermMemory:
 
     async def get_sessions(self, limit: int = 20) -> list[dict]:
         async with self._db.execute(
-            "SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?", (limit,)
+            """SELECT s.session_id, s.started_at, s.summary,
+                      COUNT(m.message_id) AS message_count
+               FROM sessions s
+               LEFT JOIN messages m ON m.session_id = s.session_id
+               GROUP BY s.session_id
+               ORDER BY s.started_at DESC LIMIT ?""",
+            (limit,),
         ) as cur:
             rows = await cur.fetchall()
             return [dict(zip([c[0] for c in cur.description], r)) for r in rows]

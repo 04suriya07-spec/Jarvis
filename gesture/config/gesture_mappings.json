@@ -1,40 +1,40 @@
 {
   "gesture_mappings": {
     "open_palm": {
-      "intent": "application_control",
-      "action": "open_chrome",
-      "params": { "app": "chrome" },
-      "description": "Open palm → Launch Chrome"
+      "intent": "desktop",
+      "action": "show_desktop",
+      "params": {},
+      "description": "Open palm → Show/hide desktop"
     },
     "closed_fist": {
       "intent": "media_control",
       "action": "pause_media",
       "params": {},
-      "description": "Closed fist → Pause/Play media"
+      "description": "Closed fist → Pause/play media"
     },
     "pointing": {
       "intent": "mouse_control",
       "action": "cursor_mode",
       "params": {},
-      "description": "Index finger pointing → Enter cursor control mode"
+      "description": "Index finger → Enter cursor mode (mouse control)"
     },
     "thumbs_up": {
       "intent": "volume_control",
       "action": "increase_volume",
       "params": { "steps": 5 },
-      "description": "Thumbs up → Increase volume"
+      "description": "Thumbs up → Volume up"
     },
     "thumbs_down": {
       "intent": "volume_control",
       "action": "decrease_volume",
       "params": { "steps": 5 },
-      "description": "Thumbs down → Decrease volume"
+      "description": "Thumbs down → Volume down"
     },
     "peace": {
       "intent": "screenshot",
       "action": "take_screenshot",
       "params": {},
-      "description": "Peace sign (V) → Take screenshot"
+      "description": "Peace / V sign → Take screenshot"
     },
     "ok": {
       "intent": "confirm",
@@ -42,17 +42,53 @@
       "params": {},
       "description": "OK sign → Press Enter"
     },
+    "three": {
+      "intent": "assistant",
+      "action": "activate_voice",
+      "params": {},
+      "description": "Three fingers → Activate voice assistant"
+    },
+    "four": {
+      "intent": "window_control",
+      "action": "switch_window_next",
+      "params": {},
+      "description": "Four fingers → Next window (Alt+Tab)"
+    },
+    "pinch": {
+      "intent": "zoom",
+      "action": "zoom_in",
+      "params": {},
+      "description": "Pinch → Zoom in (in cursor mode: left-click / drag)"
+    },
+    "call_me": {
+      "intent": "assistant",
+      "action": "trigger_assistant_chat",
+      "params": {},
+      "description": "Call-me sign → Open Javris chat"
+    },
+    "rock_on": {
+      "intent": "scroll_mode",
+      "action": "scroll_mode",
+      "params": {},
+      "description": "Rock-on / horns → Enter scroll mode"
+    },
+    "gun": {
+      "intent": "system",
+      "action": "lock_screen",
+      "params": {},
+      "description": "Finger gun → Lock screen"
+    },
     "swipe_left": {
       "intent": "window_control",
       "action": "switch_window_prev",
       "params": {},
-      "description": "Swipe left → Previous window"
+      "description": "Swipe left → Previous window (Alt+Shift+Tab)"
     },
     "swipe_right": {
       "intent": "window_control",
       "action": "switch_window_next",
       "params": {},
-      "description": "Swipe right → Next window"
+      "description": "Swipe right → Next window (Alt+Tab)"
     },
     "swipe_up": {
       "intent": "scroll",
@@ -67,12 +103,31 @@
       "description": "Swipe down → Scroll down"
     }
   },
+
+  "cursor_mode_gestures": {
+    "pinch":       "drag",
+    "peace":       "click_right",
+    "thumbs_up":   "scroll_up",
+    "thumbs_down": "scroll_down",
+    "three":       "browser_back",
+    "four":        "browser_forward",
+    "open_palm":   "exit",
+    "closed_fist": "exit"
+  },
+
+  "scroll_mode_gestures": {
+    "pointing":    "exit",
+    "open_palm":   "exit",
+    "closed_fist": "exit",
+    "peace":       "exit"
+  },
+
   "sequences": {
     "closed_fist+open_palm": {
       "intent": "media_control",
       "action": "toggle_play_pause",
       "params": {},
-      "description": "Fist then Palm → Toggle play/pause"
+      "description": "Fist then palm → Toggle play/pause"
     },
     "thumbs_up+thumbs_up": {
       "intent": "assistant",
@@ -84,9 +139,34 @@
       "intent": "window_control",
       "action": "minimize_window",
       "params": {},
-      "description": "Point then Peace → Minimize active window"
+      "description": "Point then peace → Minimize active window"
+    },
+    "thumbs_up+thumbs_down": {
+      "intent": "volume_control",
+      "action": "mute_volume",
+      "params": {},
+      "description": "Thumbs up then down → Mute/unmute"
+    },
+    "peace+peace": {
+      "intent": "screenshot",
+      "action": "take_screenshot",
+      "params": {},
+      "description": "Double peace → Take screenshot"
+    },
+    "ok+ok": {
+      "intent": "zoom",
+      "action": "zoom_out",
+      "params": {},
+      "description": "Double OK → Zoom out"
+    },
+    "four+four": {
+      "intent": "window_control",
+      "action": "close_window",
+      "params": {},
+      "description": "Double four fingers → Close window (Alt+F4)"
     }
   },
+
   "settings": {
     "smoothing_frames": 8,
     "confirmation_threshold": 0.70,
@@ -95,13 +175,21 @@
     "swipe_threshold_y": 0.12,
     "swipe_velocity_frames": 6,
     "sequence_timeout_seconds": 2.5,
-    "cursor_mode_sensitivity": 2.5,
+    "cursor_smoothing_alpha": 0.30,
+    "cursor_move_duration": 0.0,
+    "drag_confirm_frames": 4,
+    "scroll_mode_deadzone": 0.06,
+    "scroll_mode_max_speed": 8,
+    "scroll_throttle_seconds": 0.06,
     "show_landmarks": true,
     "show_gesture_label": true,
     "show_cooldown_bar": true,
     "feedback_color_active": [0, 255, 100],
-    "feedback_color_idle": [100, 100, 100]
+    "feedback_color_idle": [100, 100, 100],
+    "cursor_color": [0, 200, 255],
+    "scroll_color": [16, 185, 129]
   },
+
   "app_aliases": {
     "chrome": "chrome",
     "browser": "chrome",

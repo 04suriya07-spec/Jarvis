@@ -72,11 +72,14 @@ class ResearchAgent:
         report = await self._synthesise(topic, sections_data)
 
         return {
+            "success": True,
             "topic": topic,
             "summary": report.get("summary", ""),
+            "full_report": report.get("full_report", report.get("summary", "")),
             "sections": report.get("sections", []),
             "sub_questions": sub_questions,
             "sources": all_sources[:20],
+            "source_count": len(all_sources),
         }
 
     async def _generate_sub_questions(self, topic: str, n: int) -> list[str]:
@@ -176,7 +179,7 @@ Cite sources inline as [Source Title](url). Be analytical, not just summarizing.
                 )
             else:
                 return {"summary": "No LLM router available for synthesis", "sections": []}
-            # Split into summary and sections
+            # Extract summary: text before the first ## heading (or first paragraph)
             lines = report_text.splitlines()
             summary_lines = []
             body_lines = []
@@ -188,8 +191,19 @@ Cite sources inline as [Source Title](url). Be analytical, not just summarizing.
                 else:
                     summary_lines.append(line)
 
+            summary = "\n".join(summary_lines).strip()
+            # If LLM started with ## immediately, use first non-empty paragraph as summary
+            if not summary:
+                for line in lines:
+                    stripped = line.strip()
+                    if stripped and not stripped.startswith("#"):
+                        summary = stripped
+                        break
+            if not summary:
+                summary = report_text[:400].strip()
+
             return {
-                "summary": "\n".join(summary_lines).strip(),
+                "summary": summary,
                 "sections": [{"content": "\n".join(body_lines)}],
                 "full_report": report_text,
             }

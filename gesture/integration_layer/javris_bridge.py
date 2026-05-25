@@ -26,6 +26,7 @@ logger = logging.getLogger("javris.gesture.bridge")
 
 GESTURE_VOICE_TRIGGER  = "activate_voice"
 GESTURE_ASSISTANT_CMD  = "assistant_command"
+GESTURE_CHAT_TRIGGER   = "trigger_assistant_chat"
 
 
 class GestureEvent:
@@ -100,6 +101,8 @@ class JavrisBridge:
         # Built-in routing
         if action == GESTURE_VOICE_TRIGGER:
             await self._activate_voice(event)
+        elif action == GESTURE_CHAT_TRIGGER:
+            await self._trigger_chat(event)
         elif action == "assistant_command":
             await self._send_to_assistant(event.params.get("command", ""), event)
         else:
@@ -150,6 +153,23 @@ class JavrisBridge:
                     await self._voice_engine.speak(reply)
             except Exception as e:
                 logger.error(f"Assistant command failed: {e}")
+
+    async def _trigger_chat(self, event: GestureEvent) -> None:
+        """Signal to open Javris chat (fires an autonomy event the frontend picks up)."""
+        if self._autonomy_engine:
+            try:
+                await self._autonomy_engine.trigger(
+                    "gesture_open_chat",
+                    "Call-me gesture: open Javris chat",
+                    priority="normal",
+                )
+            except Exception:
+                pass
+        if self._voice_engine:
+            try:
+                await self._voice_engine.speak("Opening chat. How can I help you?")
+            except Exception:
+                pass
 
     async def _fire_autonomy_event(self, event: GestureEvent) -> None:
         """Fire a low-priority autonomy event for gesture tracking."""

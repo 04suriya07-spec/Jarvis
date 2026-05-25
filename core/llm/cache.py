@@ -89,8 +89,8 @@ class ResponseCache:
 
     async def put(self, messages: List[dict], system: str, response: str) -> None:
         """Store a response (async for lock safety)."""
-        if not response or len(response) > 4000:
-            return   # don't cache empty or very long responses
+        if not response or len(response) < 20 or len(response) > 4000:
+            return   # don't cache empty, truncated, or very long responses
 
         key = self._key(messages, system)
         async with self._lock:

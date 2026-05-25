@@ -20,5 +20,21 @@ node_modules/
 
 # Added by Antigravity
 API-Keys.txt
+3-API-Keys
+Highly-Confidential
+Highly-Confidential.gitignore
+scratch/pytest-temp/
 live_out.txt
 crash.log
+
+# Test output artifacts
+out*.log
+live_test*.txt
+live_final_*.txt
+gesture_test.log
+tests/test.log
+status.tmp
+
+# Screenshot artifacts
+ui_*.png
+verify_*.png

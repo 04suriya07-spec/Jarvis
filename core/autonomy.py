@@ -33,6 +33,11 @@ from typing import AsyncIterator, Callable, Optional
 
 from core.config import get_config
 from core.logger import get_logger
+from core.ambient import get_ambient_watcher, AmbientSnapshot
+
+from core.context_broker import get_context_broker
+from core.planner import get_planner
+from core.executor import get_executor
 
 logger = get_logger("javris.autonomy")
 cfg = get_config()
@@ -107,6 +112,14 @@ class AutonomyEngine:
         self._last_suggestion_times: dict[str, float] = {}
         self._dismissed_events: set[str] = set()
 
+        # Ambient context integration
+        self._ambient = get_ambient_watcher()
+        self._last_window_context: str = ""
+        self._last_app_category: str = ""
+        self._break_reminded_at: float = 0
+        self._session_start: float = time.time()
+        self._loop: asyncio.AbstractEventLoop | None = None
+
         import uuid
         self._make_id = lambda: str(uuid.uuid4())[:8]
 
@@ -147,24 +160,58 @@ class AutonomyEngine:
     async def run(self) -> None:
         """Entry point — run as a background task."""
         self._running = True
-        # Set a professional quota-safe interval (10 minutes)
-        interval = 600 
-        logger.info(f"Autonomy engine started (interval={interval}s)")
+        self._loop = asyncio.get_running_loop()
+        # Start ambient watcher (background OS thread)
+        self._ambient.start()
+        self._ambient.on_window_change = self._on_window_change
+
+        # Fast ambient tick every 30s, slow external checks every 10 min
+        fast_interval = 30
+        slow_every_n  = 20          # slow checks every 20 fast ticks = 10 min
+        tick_count    = 0
+
+        logger.info(f"Autonomy engine started (fast={fast_interval}s, slow every {slow_every_n} ticks)")
 
         while self._running:
             try:
-                await self._tick()
+                await self._fast_tick()
+                if tick_count % slow_every_n == 0:
+                    await self._slow_tick()
+                tick_count += 1
             except Exception as e:
                 logger.error(f"Autonomy tick error: {e}")
-            await asyncio.sleep(interval)
+            await asyncio.sleep(fast_interval)
 
     def stop(self) -> None:
         self._running = False
+        self._ambient.stop()
 
-    async def _tick(self) -> None:
-        """One autonomy cycle."""
+    def _on_window_change(self, title: str, exe: str, category: str) -> None:
+        """Called from ambient thread when active window changes."""
+        if not self._loop or not self._running:
+            return
+        # Schedule async context-aware suggestion
+        self._loop.call_soon_threadsafe(
+            lambda: asyncio.create_task(
+                self._suggest_from_context(title, exe, category)
+            )
+        )
+
+    async def _fast_tick(self) -> None:
+        """Quick checks — ambient context, breaks, system health."""
         checks = [
             self._check_system_health(),
+            self._check_break_reminder(),
+            self._check_ambient_context(),
+        ]
+        results = await asyncio.gather(*checks, return_exceptions=True)
+        for r in results:
+            if isinstance(r, Exception):
+                logger.debug(f"Fast tick error: {r}")
+
+    async def _slow_tick(self) -> None:
+        """Heavier checks — news, digest, suggestions (every ~10 min)."""
+        checks = [
             self._check_morning_digest(),
             self._check_proactive_suggestions(),
             self._check_news_alerts(),
@@ -172,16 +219,92 @@ class AutonomyEngine:
         results = await asyncio.gather(*checks, return_exceptions=True)
         for r in results:
             if isinstance(r, Exception):
-                logger.debug(f"Autonomy check error: {r}")
+                logger.debug(f"Slow tick error: {r}")
+
+    async def _check_break_reminder(self) -> None:
+        """Remind user to take a break after 90 min of continuous activity."""
+        snap = self._ambient.snapshot
+        # Only if user has been actively using computer (idle < 5 min)
+        if snap.idle_seconds > 300:
+            self._session_start = time.time()   # reset session on idle
+            return
+
+        session_minutes = (time.time() - self._session_start) / 60
+        if session_minutes >= 90:
+            time_since_reminder = time.time() - self._break_reminded_at
+            if time_since_reminder > 5400:   # remind max once per 90 min
+                self._break_reminded_at = time.time()
+                self._session_start = time.time()
+                owner = self._personality.owner_name if self._personality else "Sir"
+                await self._emit(AutonomyEvent(
+                    event_id=self._make_id(),
+                    event_type="wellness",
+                    priority=EventPriority.MEDIUM,
+                    title="Break Reminder",
+                    message=f"You've been working for {int(session_minutes)} minutes, {owner}. Consider a short break.",
+                    action="none",
+                ))
+
+    async def _check_ambient_context(self) -> None:
+        """Surface context-aware suggestions based on active app/window."""
+        snap = self._ambient.snapshot
+        if snap.app_category == self._last_app_category:
+            return   # no change
+        self._last_app_category = snap.app_category
+        # Emit ambient context update to WebSocket dashboard
+        await self._broadcast(AutonomyEvent(
+            event_id=self._make_id(),
+            event_type="ambient_context",
+            priority=EventPriority.LOW,
+            title="Context Update",
+            message=snap.to_context_string(),
+            data=snap.to_dict(),
+        ))
+
+    async def _suggest_from_context(self, title: str, exe: str, category: str) -> None:
+        """Proactively suggest actions based on what the user just opened."""
+        if not self._personality:
+            return
+
+        # Only emit once per unique window, with 5 min cooldown
+        key = f"window_{category}_{exe[:20]}"
+        await self._emit_throttled(key, 300, AutonomyEvent(
+            event_id=self._make_id(),
+            event_type="context_suggestion",
+            priority=EventPriority.LOW,
+            title=f"Context: {category.title()}",
+            message=self._context_message(title, exe, category),
+            action="none",
+            data={"window": title, "exe": exe, "category": category},
+        ))
+
+    def _context_message(self, title: str, exe: str, category: str) -> str:
+        name = self._personality.owner_name if self._personality else "Sir"
+        messages = {
+            "coding": f"Switched to coding, {name}. Want me to pull up recent commits or run tests?",
+            "browsing": f"Browser is active, {name}. Shall I search or summarize something?",
+            "communication": f"Communication app is open, {name}. Any messages I should draft?",
+            "terminal": f"Terminal opened, {name}. Running a deployment or task?",
+            "documents": f"Working on documents, {name}. Want me to summarize or proofread?",
+            "media": f"Enjoying some media, {name}. I'll stay quiet unless you need me.",
+        }
+        return messages.get(category, f"Switched to {title[:40]}, {name}.")
+
+    # Keep original single-tick name as alias for backward compat
+    async def _tick(self) -> None:
+        await self._fast_tick()
 
     # ── Checks ────────────────────────────────────────────────
 
     async def _check_system_health(self) -> None:
         """Alert on high CPU / low disk / memory pressure."""
         try:
-            cpu = psutil.cpu_percent(interval=1)
-            mem = psutil.virtual_memory()
-            disk = psutil.disk_usage("/")
+            loop = asyncio.get_running_loop()
+            
+            # Run blocking psutil calls in executor
+            cpu = await loop.run_in_executor(None, lambda: psutil.cpu_percent(interval=1))
+            mem = await loop.run_in_executor(None, psutil.virtual_memory)
+            disk = await loop.run_in_executor(None, lambda: psutil.disk_usage("/"))
 
             # CPU spike
             if cpu > 90:
@@ -395,3 +518,47 @@ class AutonomyEngine:
             "running": self._running,
             "subscribers": len(self._subscribers),
         }
+
+    async def execute_autonomous_task(self, goal: str) -> None:
+        """
+        Takes a complex user goal, uses the Planner to break it down,
+        and uses the Executor to run the steps. Runs in background.
+        """
+        if not self._assistant:
+            logger.error("Cannot execute autonomous task: Assistant dependency not set")
+            return
+
+        logger.info(f"Starting autonomous task for goal: {goal}")
+        await self.trigger("task_started", f"Starting autonomous task: {goal}", priority="high")
+
+        try:
+            # 1. Build context
+            broker = get_context_broker(self._assistant.memory)
+            context = await broker.build_context(goal)
+
+            # 2. Extract tools
+            tools = self._assistant._skill_registry
+
+            # 3. Use Parallel Agents (Orchestrator) if the goal explicitly contains " and "
+            if " and " in goal.lower() and len(goal.split(" and ")) > 1:
+                goals = [g.strip() for g in goal.split(" and ") if g.strip()]
+                from core.agents import AgentOrchestrator
+                orchestrator = AgentOrchestrator(self._assistant._router, tools)
+                results = await orchestrator.run_parallel(goals, assistant=self._assistant)
+                trace = {"status": "success", "results": results}
+            else:
+                from core.reasoning import ReActEngine
+                engine = ReActEngine(self._assistant._router)
+                result = await engine.solve(goal, tools, assistant=self._assistant)
+                trace = {"status": "success", "result": result}
+
+            # 4. Notify completion
+            if trace.get("status") == "success":
+                await self.trigger("task_completed", f"Autonomous task completed: {goal}", priority="high", data=trace)
+            else:
+                err = trace.get("error", "Unknown error")
+                await self.trigger("task_failed", f"Autonomous task failed: {err}", priority="high", data=trace)
+                
+        except Exception as e:
+            logger.error(f"Error executing autonomous task '{goal}': {e}")
+            await self.trigger("task_failed", f"Error: {str(e)}", priority="high")
